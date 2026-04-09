@@ -111,3 +111,34 @@ def test_extract_response_text_supports_output_and_output_text() -> None:
 
     assert agent._extract_response_text(RespA()) == "Direct text"
     assert agent._extract_response_text(RespB()) == "chunk one\nchunk two"
+
+
+def test_chat_continues_when_length_finish_reason(monkeypatch) -> None:
+    agent = _build_agent()
+
+    class Cfg:
+        max_continuation_calls = 2
+        model = "qwen/qwen3.5-flash-02-23"
+
+    agent.config = Cfg()
+
+    responses = [
+        ("## Section\n- Item A\n- Three-P", "length"),
+        ("hase reading\n- Item C\n", "stop"),
+    ]
+
+    def fake_chat_once(*_args, **_kwargs):
+        return responses.pop(0)
+
+    monkeypatch.setattr(agent, "_chat_once", fake_chat_once)
+
+    out = agent._chat(
+        system_prompt="system",
+        user_prompt="user",
+        temperature=0.1,
+        model="qwen/qwen3.5-flash-02-23",
+        allow_continuation=True,
+    )
+
+    assert "Three-Phase" in out
+    assert "Item C" in out

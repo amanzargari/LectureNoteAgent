@@ -77,13 +77,13 @@ class LectureNoteAgent:
         self._completion_tokens += int(completion or 0)
         self._total_tokens += int(total or 0)
 
-    def _chat(
+    def _chat_once(
         self,
         system_prompt: str,
         user_prompt: str,
         temperature: float = 0.1,
         model: str | None = None,
-    ) -> str:
+    ) -> tuple[str, str | None]:
         self._enforce_call_limit()
         self._model_calls += 1
         resolved_model = (model or self.config.model).strip()
@@ -97,7 +97,54 @@ class LectureNoteAgent:
             ],
         )
         self._accumulate_usage(getattr(response, "usage", None))
-        return response.choices[0].message.content or ""
+        choice = response.choices[0]
+        content = choice.message.content or ""
+        finish_reason = getattr(choice, "finish_reason", None)
+        return content, finish_reason
+
+    def _chat(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.1,
+        model: str | None = None,
+        allow_continuation: bool = False,
+    ) -> str:
+        text, finish_reason = self._chat_once(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=temperature,
+            model=model,
+        )
+        if not allow_continuation:
+            return text
+
+        combined = text or ""
+        continuation_calls = 0
+        while (
+            finish_reason == "length"
+            and continuation_calls < max(0, int(self.config.max_continuation_calls))
+        ):
+            continuation_calls += 1
+            tail = combined[-4000:]
+            continuation_prompt = (
+                "Continue the SAME markdown document from exactly where it stopped. "
+                "Do not restart. Do not repeat existing content. "
+                "Start from the first incomplete sentence or heading and continue to completion.\n\n"
+                "Document tail:\n"
+                f"{tail}"
+            )
+            next_chunk, finish_reason = self._chat_once(
+                system_prompt=system_prompt,
+                user_prompt=continuation_prompt,
+                temperature=temperature,
+                model=model,
+            )
+            if not next_chunk.strip():
+                break
+            combined += next_chunk.lstrip()
+
+        return combined
 
     def _extract_response_text(self, response: object) -> str:
         output_text = getattr(response, "output_text", None)
@@ -338,6 +385,7 @@ class LectureNoteAgent:
             f"Generate coverage checklist from this source bundle:\n\n{source_payload}",
             temperature=0,
             model=self.config.model_checklist,
+            allow_continuation=True,
         )
 
         draft_input = (
@@ -351,6 +399,7 @@ class LectureNoteAgent:
             draft_input,
             temperature=0.2,
             model=self.config.model_draft,
+            allow_continuation=True,
         )
 
         step += 1
@@ -380,6 +429,7 @@ class LectureNoteAgent:
                 repair_input,
                 temperature=0.1,
                 model=self.config.model_repair,
+                allow_continuation=True,
             )
             step += 1
             self._emit_progress(
