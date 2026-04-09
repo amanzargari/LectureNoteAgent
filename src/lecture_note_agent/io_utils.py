@@ -45,32 +45,8 @@ def has_meaningful_text(text: str, min_alnum: int = 30) -> bool:
     return _has_meaningful_text(text, min_alnum=min_alnum)
 
 
-def _ocr_pdf_page(slides_path: str, page_index_zero_based: int, dpi: int, lang: str) -> str:
-    try:
-        import fitz  # PyMuPDF
-        import pytesseract
-        from PIL import Image
-    except Exception:
-        return ""
-
-    try:
-        with fitz.open(slides_path) as doc:
-            page = doc.load_page(page_index_zero_based)
-            zoom = max(1.0, float(dpi) / 72.0)
-            mat = fitz.Matrix(zoom, zoom)
-            pix = page.get_pixmap(matrix=mat, alpha=False)
-            image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            text = pytesseract.image_to_string(image, lang=lang or "eng")
-            return (text or "").strip()
-    except Exception:
-        return ""
-
-
 def parse_slides(
     slides_path: str,
-    enable_pdf_ocr: bool = False,
-    ocr_lang: str = "eng",
-    ocr_dpi: int = 220,
 ) -> List[SlideUnit]:
     path = Path(slides_path)
     ext = path.suffix.lower()
@@ -99,18 +75,12 @@ def parse_slides(
         slides = []
         for i, page in enumerate(reader.pages, 1):
             page_text = (page.extract_text() or "").strip()
-            ocr_text = ""
-            if enable_pdf_ocr and not _has_meaningful_text(page_text):
-                ocr_text = _ocr_pdf_page(str(path), i - 1, dpi=ocr_dpi, lang=ocr_lang)
-
-            full_text = "\n".join(x for x in [page_text, ocr_text] if x).strip()
+            full_text = page_text
             image_refs: list[str] = []
             images = getattr(page, "images", []) or []
             for j, img in enumerate(images, 1):
                 ref = getattr(img, "name", "") or f"pdf_page_{i}_image_{j}"
                 image_refs.append(ref)
-            if enable_pdf_ocr and ocr_text:
-                image_refs.append(f"pdf_page_{i}_fullpage_scan")
             title = full_text.splitlines()[0][:140] if full_text else f"Slide {i}"
             slides.append(
                 SlideUnit(

@@ -17,8 +17,7 @@ and generates a **comprehensive markdown lecture note** that:
 ## Features
 
 - **Multi-source ingestion** for slides and transcripts
-- **OCR fallback for scanned/image-heavy PDFs** (Tesseract + PyMuPDF)
-- **Model-file OCR for PDF-capable models** (upload full PDF or per-page PDF)
+- **Model-only OCR for PDFs** (automatic whole-file + page fallback)
 - **Coverage checklist generation** (atomic items with IDs)
 - **Lecture-note drafting** with references like `[S3]`, `[T17]`
 - **Strict validation pass** with JSON audit
@@ -44,16 +43,11 @@ and generates a **comprehensive markdown lecture note** that:
 2. Configure `.env`:
 
    - `OPENAI_API_KEY=your_openai_api_key_here`
-   - `OPENAI_BASE_URL=https://api.openai.com/v1`
-   - `OPENAI_MODEL=gpt-4.1-mini`
+   - `OPENAI_BASE_URL=https://openrouter.ai/api/v1`
+   - `OPENAI_MODEL=openai/gpt-5.4-mini`
    - `MAX_REPAIR_LOOPS=3`
    - `MAX_MODEL_CALLS=6`
    - `MAX_OUTPUT_TOKENS=3500`
-   - `ENABLE_PDF_OCR=true`
-   - `ENABLE_MODEL_FILE_OCR=false`
-   - `MODEL_FILE_OCR_MODE=auto` (`auto`, `whole`, `page`)
-   - `OCR_LANG=eng`
-   - `OCR_DPI=220`
 
 The app now uses an OpenAI-compatible client only. Keep credentials in `.env` only.
 
@@ -67,21 +61,13 @@ Or after editable install (`pip install -e .`):
 
 `slideagent --course-name "Data Structures" --slides ./input/week1.pdf --transcript ./input/week1_transcript.txt --output ./output/week1_lecture_notes.md --artifacts-dir ./artifacts/week1`
 
-OCR controls are available from CLI too:
-
-`slideagent --course-name "Data Structures" --slides ./input/week1.pdf --transcript ./input/week1_transcript.txt --output ./output/week1_lecture_notes.md --pdf-ocr --ocr-lang eng --ocr-dpi 240`
-
-Model-file OCR controls (recommended for file-capable OpenAI-compatible models):
-
-`slideagent --course-name "Data Structures" --slides ./input/week1.pdf --transcript ./input/week1_transcript.txt --output ./output/week1_lecture_notes.md --model-file-ocr --model-file-ocr-mode auto`
-
-### Model-file OCR strategy
+### PDF OCR strategy (automatic)
 
 - `whole`: uploads the full PDF once and asks the model to return per-page JSON text.
 - `page`: uploads one-page PDFs and extracts each page separately.
 - `auto`: tries `whole` first, then falls back to `page` for weak/missing pages.
 
-This is useful for image-heavy/scanned lecture slides where classic OCR may miss content.
+This strategy is always used for PDFs; no OCR toggles are required in UI/CLI/env.
 
 ## Web UI
 
@@ -118,5 +104,4 @@ Validation ensures high coverage, then repair loop attempts to fix any missing i
 
 - For best results, provide clean transcript text (timestamps/speaker names are supported).
 - PDF image extraction depends on available image metadata in the PDF.
-- OCR requires Tesseract installed on the runtime system (already included in the Docker image).
 - PPTX image references use shape names from slides.

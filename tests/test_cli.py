@@ -14,7 +14,7 @@ class DummyArtifacts:
     audit_json = '{"pass": true}'
 
 
-def test_cli_passes_model_file_ocr_options(monkeypatch, tmp_path: Path) -> None:
+def test_cli_passes_basic_arguments(monkeypatch, tmp_path: Path) -> None:
     captured: dict = {}
 
     class DummyAgent:
@@ -45,21 +45,11 @@ def test_cli_passes_model_file_ocr_options(monkeypatch, tmp_path: Path) -> None:
             str(output),
             "--artifacts-dir",
             str(tmp_path / "artifacts"),
-            "--model-file-ocr",
-            "--model-file-ocr-mode",
-            "page",
-            "--pdf-ocr",
-            "--ocr-lang",
-            "eng",
-            "--ocr-dpi",
-            "240",
         ],
     )
 
     assert result.exit_code == 0, result.output
     assert captured["course_name"] == "Test Course"
-    assert captured["enable_model_file_ocr"] is True
-    assert captured["model_file_ocr_mode"] == "page"
-    assert captured["enable_pdf_ocr"] is True
-    assert captured["ocr_lang"] == "eng"
-    assert captured["ocr_dpi"] == 240
+    assert captured["slides_path"] == str(slides)
+    assert captured["transcript_path"] == str(transcript)
+    assert captured["output_path"] == str(output)

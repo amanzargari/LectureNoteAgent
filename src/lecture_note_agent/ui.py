@@ -37,22 +37,6 @@ def app() -> None:
         max_model_calls = st.slider("Max model calls", min_value=3, max_value=20, value=default_cfg.max_model_calls)
         max_output_tokens = st.slider("Max output tokens per call", min_value=512, max_value=8000, value=default_cfg.max_output_tokens, step=128)
 
-        st.subheader("OCR Settings")
-        enable_pdf_ocr = st.checkbox("Enable OCR for scanned PDFs", value=default_cfg.enable_pdf_ocr)
-        enable_model_file_ocr = st.checkbox(
-            "Enable model file OCR (PDF upload to model)",
-            value=default_cfg.enable_model_file_ocr,
-            help="Best for image-heavy/scanned PDFs when your model supports file input.",
-        )
-        model_file_ocr_mode = st.selectbox(
-            "Model file OCR mode",
-            options=["auto", "whole", "page"],
-            index=["auto", "whole", "page"].index(default_cfg.model_file_ocr_mode if default_cfg.model_file_ocr_mode in {"auto", "whole", "page"} else "auto"),
-            help="auto: try whole-file then page fallback; whole: one file call; page: per-page file calls.",
-        )
-        ocr_lang = st.text_input("OCR language", value=default_cfg.ocr_lang)
-        ocr_dpi = st.slider("OCR DPI", min_value=120, max_value=400, value=default_cfg.ocr_dpi, step=10)
-
     course_name = st.text_input("Course name", value="My Course")
     slides_file = st.file_uploader("Upload slides (.pdf/.pptx/.md/.txt)", type=["pdf", "pptx", "md", "txt"])
     transcript_file = st.file_uploader("Upload transcript (.txt/.md)", type=["txt", "md"])
@@ -88,11 +72,6 @@ def app() -> None:
                     max_model_calls=max_model_calls,
                     max_output_tokens=max_output_tokens,
                     max_input_chars=300000,
-                    enable_pdf_ocr=enable_pdf_ocr,
-                    enable_model_file_ocr=enable_model_file_ocr,
-                    model_file_ocr_mode=model_file_ocr_mode,
-                    ocr_lang=ocr_lang.strip() or "eng",
-                    ocr_dpi=ocr_dpi,
                 )
 
                 agent = LectureNoteAgent(config=config)
@@ -111,11 +90,6 @@ def app() -> None:
                     transcript_path=str(transcript_path),
                     output_path=str(output_path),
                     artifacts_dir=str(artifacts_dir),
-                    enable_pdf_ocr=enable_pdf_ocr,
-                    enable_model_file_ocr=enable_model_file_ocr,
-                    model_file_ocr_mode=model_file_ocr_mode,
-                    ocr_lang=ocr_lang.strip() or "eng",
-                    ocr_dpi=ocr_dpi,
                     progress_callback=_on_progress,
                 )
                 progress_bar.progress(1.0, text="Completed")

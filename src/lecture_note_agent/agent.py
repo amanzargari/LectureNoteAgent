@@ -301,34 +301,19 @@ class LectureNoteAgent:
         transcript_path: str,
         output_path: str,
         artifacts_dir: str | None = None,
-        enable_pdf_ocr: bool | None = None,
-        enable_model_file_ocr: bool | None = None,
-        model_file_ocr_mode: str | None = None,
-        ocr_lang: str | None = None,
-        ocr_dpi: int | None = None,
         progress_callback: Callable[[dict], None] | None = None,
     ) -> GenerationArtifacts:
         estimated_steps = max(8, 8 + (self.config.max_repair_loops * 2))
         step = 1
         self._emit_progress(progress_callback, "ingest", "Parsing slides and transcript", step, estimated_steps)
-        slides = parse_slides(
-            slides_path,
-            enable_pdf_ocr=self.config.enable_pdf_ocr if enable_pdf_ocr is None else enable_pdf_ocr,
-            ocr_lang=self.config.ocr_lang if ocr_lang is None else ocr_lang,
-            ocr_dpi=self.config.ocr_dpi if ocr_dpi is None else ocr_dpi,
-        )
-        use_model_file_ocr = (
-            self.config.enable_model_file_ocr
-            if enable_model_file_ocr is None
-            else enable_model_file_ocr
-        )
-        if use_model_file_ocr:
+        slides = parse_slides(slides_path)
+        if Path(slides_path).suffix.lower() == ".pdf":
             step += 1
-            self._emit_progress(progress_callback, "ocr", "Running model-file OCR on PDF", step, estimated_steps)
+            self._emit_progress(progress_callback, "ocr", "Running model OCR on PDF", step, estimated_steps)
             slides = self._merge_model_ocr_text(
                 slides_path=slides_path,
                 slides=slides,
-                mode=self.config.model_file_ocr_mode if model_file_ocr_mode is None else model_file_ocr_mode,
+                mode="auto",
             )
 
         transcript = parse_transcript(transcript_path)
