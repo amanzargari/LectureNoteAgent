@@ -44,12 +44,12 @@ and generates a **comprehensive markdown lecture note** that:
 
    - `OPENAI_API_KEY=your_openai_api_key_here`
    - `OPENAI_BASE_URL=https://openrouter.ai/api/v1`
-   - `OPENAI_MODEL=openai/gpt-5.4-mini` (fallback)
-   - `OPENAI_MODEL_OCR=openai/gpt-5.4-mini`
-   - `OPENAI_MODEL_CHECKLIST=mistralai/mistral-small-2603`
-   - `OPENAI_MODEL_DRAFT=mistralai/mistral-small-2603`
-   - `OPENAI_MODEL_AUDIT=openai/gpt-5.4-mini`
-   - `OPENAI_MODEL_REPAIR=openai/gpt-5.4-mini`
+   - `OPENAI_MODEL=openai/gpt-5.4` (fallback)
+   - `OPENAI_MODEL_OCR=openai/gpt-5.4`
+   - `OPENAI_MODEL_CHECKLIST=openai/gpt-5.4`
+   - `OPENAI_MODEL_DRAFT=openai/gpt-5.4`
+   - `OPENAI_MODEL_AUDIT=openai/gpt-5.4`
+   - `OPENAI_MODEL_REPAIR=openai/gpt-5.4`
    - `MAX_REPAIR_LOOPS=3`
    - `MAX_MODEL_CALLS=6`
    - `MAX_OUTPUT_TOKENS=3500`

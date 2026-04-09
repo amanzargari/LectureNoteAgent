@@ -29,9 +29,10 @@ def app() -> None:
 
     default_cfg = AgentConfig()
 
+    if "last_run" not in st.session_state:
+        st.session_state["last_run"] = None
+
     with st.sidebar:
-        st.subheader("Model Settings")
-        st.info("API key and base URL are read from .env only (OPENAI_API_KEY / OPENAI_BASE_URL).")
         model = st.text_input("OPENAI_MODEL (fallback)", value=default_cfg.model)
         model_ocr = st.text_input("OPENAI_MODEL_OCR", value=default_cfg.model_ocr)
         model_checklist = st.text_input("OPENAI_MODEL_CHECKLIST", value=default_cfg.model_checklist)
@@ -106,56 +107,70 @@ def app() -> None:
 
                 note_text = output_path.read_text(encoding="utf-8")
 
-                st.success("Lecture notes generated.")
-                usage_col1, usage_col2, usage_col3, usage_col4 = st.columns(4)
-                usage_col1.metric("Model Calls", str(getattr(artifacts, "model_calls", 0)))
-                usage_col2.metric("Prompt Tokens", str(getattr(artifacts, "prompt_tokens", 0)))
-                usage_col3.metric("Completion Tokens", str(getattr(artifacts, "completion_tokens", 0)))
-                usage_col4.metric("Total Tokens", str(getattr(artifacts, "total_tokens", 0)))
+                st.session_state["last_run"] = {
+                    "note_text": note_text,
+                    "audit_json": artifacts.audit_json,
+                    "checklist_text": artifacts.checklist_markdown,
+                    "model_calls": int(getattr(artifacts, "model_calls", 0) or 0),
+                    "prompt_tokens": int(getattr(artifacts, "prompt_tokens", 0) or 0),
+                    "completion_tokens": int(getattr(artifacts, "completion_tokens", 0) or 0),
+                    "total_tokens": int(getattr(artifacts, "total_tokens", 0) or 0),
+                }
 
-                col1, col2 = st.columns(2)
+    last_run = st.session_state.get("last_run")
+    if isinstance(last_run, dict):
+        st.success("Lecture notes generated.")
+        usage_col1, usage_col2, usage_col3, usage_col4 = st.columns(4)
+        usage_col1.metric("Model Calls", str(last_run.get("model_calls", 0)))
+        usage_col2.metric("Prompt Tokens", str(last_run.get("prompt_tokens", 0)))
+        usage_col3.metric("Completion Tokens", str(last_run.get("completion_tokens", 0)))
+        usage_col4.metric("Total Tokens", str(last_run.get("total_tokens", 0)))
 
-                with col1:
-                    st.subheader("Lecture Notes")
-                    st.markdown(note_text)
-                    st.download_button(
-                        "Download lecture_notes.md",
-                        data=note_text,
-                        file_name="lecture_notes.md",
-                        mime="text/markdown",
-                        use_container_width=True,
-                    )
+        col1, col2 = st.columns(2)
 
-                with col2:
-                    st.subheader("Audit JSON")
-                    st.code(artifacts.audit_json, language="json")
-                    st.download_button(
-                        "Download audit.json",
-                        data=artifacts.audit_json,
-                        file_name="audit.json",
-                        mime="application/json",
-                        use_container_width=True,
-                    )
+        with col1:
+            st.subheader("Lecture Notes")
+            st.markdown(last_run.get("note_text", ""))
+            st.download_button(
+                "Download lecture_notes.md",
+                data=last_run.get("note_text", ""),
+                file_name="lecture_notes.md",
+                mime="text/markdown",
+                use_container_width=True,
+                key="download_lecture_notes",
+            )
 
-                    checklist_path = artifacts_dir / "checklist.md"
-                    if checklist_path.exists():
-                        checklist_text = checklist_path.read_text(encoding="utf-8")
-                        with st.expander("Checklist"):
-                            st.markdown(checklist_text)
-                        st.download_button(
-                            "Download checklist.md",
-                            data=checklist_text,
-                            file_name="checklist.md",
-                            mime="text/markdown",
-                            use_container_width=True,
-                        )
+        with col2:
+            st.subheader("Audit JSON")
+            st.code(last_run.get("audit_json", ""), language="json")
+            st.download_button(
+                "Download audit.json",
+                data=last_run.get("audit_json", ""),
+                file_name="audit.json",
+                mime="application/json",
+                use_container_width=True,
+                key="download_audit_json",
+            )
 
-                with st.expander("Run Summary"):
-                    try:
-                        parsed = json.loads(artifacts.audit_json)
-                        st.json(parsed)
-                    except Exception:
-                        st.text(artifacts.audit_json)
+            checklist_text = last_run.get("checklist_text", "")
+            if checklist_text:
+                with st.expander("Checklist"):
+                    st.markdown(checklist_text)
+                st.download_button(
+                    "Download checklist.md",
+                    data=checklist_text,
+                    file_name="checklist.md",
+                    mime="text/markdown",
+                    use_container_width=True,
+                    key="download_checklist_md",
+                )
+
+        with st.expander("Run Summary"):
+            try:
+                parsed = json.loads(last_run.get("audit_json", "{}"))
+                st.json(parsed)
+            except Exception:
+                st.text(last_run.get("audit_json", ""))
 
 
 def run() -> None:
