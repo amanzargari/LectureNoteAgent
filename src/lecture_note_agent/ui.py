@@ -32,7 +32,12 @@ def app() -> None:
     with st.sidebar:
         st.subheader("Model Settings")
         st.info("API key and base URL are read from .env only (OPENAI_API_KEY / OPENAI_BASE_URL).")
-        model = st.text_input("OPENAI_MODEL", value=default_cfg.model)
+        model = st.text_input("OPENAI_MODEL (fallback)", value=default_cfg.model)
+        model_ocr = st.text_input("OPENAI_MODEL_OCR", value=default_cfg.model_ocr)
+        model_checklist = st.text_input("OPENAI_MODEL_CHECKLIST", value=default_cfg.model_checklist)
+        model_draft = st.text_input("OPENAI_MODEL_DRAFT", value=default_cfg.model_draft)
+        model_audit = st.text_input("OPENAI_MODEL_AUDIT", value=default_cfg.model_audit)
+        model_repair = st.text_input("OPENAI_MODEL_REPAIR", value=default_cfg.model_repair)
         max_repair_loops = st.slider("Max repair loops", min_value=1, max_value=6, value=default_cfg.max_repair_loops)
         max_model_calls = st.slider("Max model calls", min_value=3, max_value=20, value=default_cfg.max_model_calls)
         max_output_tokens = st.slider("Max output tokens per call", min_value=512, max_value=8000, value=default_cfg.max_output_tokens, step=128)
@@ -68,6 +73,11 @@ def app() -> None:
 
                 config = AgentConfig(
                     model=model.strip(),
+                    model_ocr=model_ocr.strip() or model.strip(),
+                    model_checklist=model_checklist.strip() or model.strip(),
+                    model_draft=model_draft.strip() or model.strip(),
+                    model_audit=model_audit.strip() or model.strip(),
+                    model_repair=model_repair.strip() or model.strip(),
                     max_repair_loops=max_repair_loops,
                     max_model_calls=max_model_calls,
                     max_output_tokens=max_output_tokens,

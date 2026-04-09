@@ -44,7 +44,12 @@ and generates a **comprehensive markdown lecture note** that:
 
    - `OPENAI_API_KEY=your_openai_api_key_here`
    - `OPENAI_BASE_URL=https://openrouter.ai/api/v1`
-   - `OPENAI_MODEL=openai/gpt-5.4-mini`
+   - `OPENAI_MODEL=openai/gpt-5.4-mini` (fallback)
+   - `OPENAI_MODEL_OCR=openai/gpt-5.4-mini`
+   - `OPENAI_MODEL_CHECKLIST=mistralai/mistral-small-2603`
+   - `OPENAI_MODEL_DRAFT=mistralai/mistral-small-2603`
+   - `OPENAI_MODEL_AUDIT=openai/gpt-5.4-mini`
+   - `OPENAI_MODEL_REPAIR=openai/gpt-5.4-mini`
    - `MAX_REPAIR_LOOPS=3`
    - `MAX_MODEL_CALLS=6`
    - `MAX_OUTPUT_TOKENS=3500`
@@ -68,6 +73,18 @@ Or after editable install (`pip install -e .`):
 - `auto`: tries `whole` first, then falls back to `page` for weak/missing pages.
 
 This strategy is always used for PDFs; no OCR toggles are required in UI/CLI/env.
+
+### Multi-model by phase
+
+SlideAGENT can route each phase to a different model:
+
+- OCR phase → `OPENAI_MODEL_OCR`
+- Checklist phase → `OPENAI_MODEL_CHECKLIST`
+- Draft phase → `OPENAI_MODEL_DRAFT`
+- Audit phase → `OPENAI_MODEL_AUDIT`
+- Repair phase → `OPENAI_MODEL_REPAIR`
+
+If a phase model is not provided, `OPENAI_MODEL` is used as fallback.
 
 ## Web UI
 

@@ -77,11 +77,18 @@ class LectureNoteAgent:
         self._completion_tokens += int(completion or 0)
         self._total_tokens += int(total or 0)
 
-    def _chat(self, system_prompt: str, user_prompt: str, temperature: float = 0.1) -> str:
+    def _chat(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.1,
+        model: str | None = None,
+    ) -> str:
         self._enforce_call_limit()
         self._model_calls += 1
+        resolved_model = (model or self.config.model).strip()
         response = self.client.chat.completions.create(
-            model=self.config.model,
+            model=resolved_model,
             temperature=temperature,
             max_tokens=self.config.max_output_tokens,
             messages=[
@@ -113,7 +120,7 @@ class LectureNoteAgent:
 
         return ""
 
-    def _file_ocr_call(self, prompt: str, file_path: str) -> str:
+    def _file_ocr_call(self, prompt: str, file_path: str, model: str | None = None) -> str:
         uploaded = None
         try:
             with open(file_path, "rb") as f:
@@ -125,8 +132,9 @@ class LectureNoteAgent:
 
             self._enforce_call_limit()
             self._model_calls += 1
+            resolved_model = (model or self.config.model_ocr or self.config.model).strip()
             response = self.client.responses.create(
-                model=self.config.model,
+                model=resolved_model,
                 max_output_tokens=self.config.max_output_tokens,
                 input=[
                     {
@@ -187,7 +195,7 @@ class LectureNoteAgent:
             '{"pages":[{"page":1,"text":"..."}]}. '
             f"The PDF has {total_pages} pages. Include every page from 1..{total_pages}."
         )
-        raw = self._file_ocr_call(prompt, pdf_path)
+        raw = self._file_ocr_call(prompt, pdf_path, model=self.config.model_ocr)
         return self._parse_page_json(raw)
 
     def _ocr_pdf_via_model_per_page(self, pdf_path: str, page_numbers: list[int]) -> dict[int, str]:
@@ -212,7 +220,7 @@ class LectureNoteAgent:
                     "Extract all text from this single lecture slide page with high fidelity, including formulas and symbols. "
                     "Return ONLY the plain extracted text for this page."
                 )
-                text = self._file_ocr_call(prompt, tmp.name)
+                text = self._file_ocr_call(prompt, tmp.name, model=self.config.model_ocr)
                 if text.strip():
                     page_map[page_number] = text.strip()
 
@@ -277,7 +285,7 @@ class LectureNoteAgent:
             "## Lecture Notes\n"
             f"{notes_md}"
         )
-        raw = self._chat(AUDIT_PROMPT, payload, temperature=0)
+        raw = self._chat(AUDIT_PROMPT, payload, temperature=0, model=self.config.model_audit)
 
         try:
             return json.loads(raw)
@@ -329,6 +337,7 @@ class LectureNoteAgent:
             CHECKLIST_PROMPT,
             f"Generate coverage checklist from this source bundle:\n\n{source_payload}",
             temperature=0,
+            model=self.config.model_checklist,
         )
 
         draft_input = (
@@ -337,7 +346,12 @@ class LectureNoteAgent:
         )
         step += 1
         self._emit_progress(progress_callback, "draft", "Drafting lecture notes", step, estimated_steps)
-        notes_md = self._chat(DRAFT_NOTES_PROMPT, draft_input, temperature=0.2)
+        notes_md = self._chat(
+            DRAFT_NOTES_PROMPT,
+            draft_input,
+            temperature=0.2,
+            model=self.config.model_draft,
+        )
 
         step += 1
         self._emit_progress(progress_callback, "audit", "Auditing coverage and quality", step, estimated_steps)
@@ -361,7 +375,12 @@ class LectureNoteAgent:
                 f"## Source Bundle\n{source_payload}\n\n"
                 f"## Current Notes\n{notes_md}"
             )
-            notes_md = self._chat(REPAIR_PROMPT, repair_input, temperature=0.1)
+            notes_md = self._chat(
+                REPAIR_PROMPT,
+                repair_input,
+                temperature=0.1,
+                model=self.config.model_repair,
+            )
             step += 1
             self._emit_progress(
                 progress_callback,
