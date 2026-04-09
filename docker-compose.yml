@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  slideagent-ui:
+    build: .
+    container_name: slideagent-ui
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+    restart: unless-stopped
