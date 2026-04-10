@@ -161,3 +161,31 @@ def test_write_docx_fuzzy_image_ref_matching(tmp_path: Path) -> None:
         media_files = [name for name in archive.namelist() if name.startswith("word/media/")]
 
     assert len(media_files) == 1
+
+
+def test_extract_slide_images_avoids_over_aggressive_crop(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("IMAGE_CROP_RELAX_FACTOR", "1.0")
+    monkeypatch.setenv("IMAGE_CROP_MIN_RETAIN_RATIO", "0.60")
+
+    source_image = tmp_path / "wide.png"
+    Image.new("RGB", (100, 50), color=(240, 200, 20)).save(source_image)
+
+    pptx_path = tmp_path / "aggressive_crop.pptx"
+    prs = Presentation()
+    blank_layout = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank_layout)
+    picture = slide.shapes.add_picture(str(source_image), Inches(1), Inches(1), width=Inches(4))
+    picture.crop_left = 0.7
+    picture.crop_right = 0.0
+    prs.save(str(pptx_path))
+
+    images = extract_slide_images(str(pptx_path), artifacts_dir=str(tmp_path / "artifacts"))
+    extracted_path = Path(images[1][0].image_path)
+    assert extracted_path.exists()
+
+    with Image.open(extracted_path) as out_img:
+        width, height = out_img.size
+
+    # Should keep original dimensions when crop is too aggressive.
+    assert width == 100
+    assert height == 50

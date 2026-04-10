@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -224,14 +225,35 @@ def _crop_image(
 ) -> Path:
     from PIL import Image
 
+    relax_factor = max(0.0, min(1.0, float(os.getenv("IMAGE_CROP_RELAX_FACTOR", "0.75"))))
+    min_retain = max(0.25, min(0.95, float(os.getenv("IMAGE_CROP_MIN_RETAIN_RATIO", "0.45"))))
+
+    eff_left = crop_left * relax_factor
+    eff_top = crop_top * relax_factor
+    eff_right = crop_right * relax_factor
+    eff_bottom = crop_bottom * relax_factor
+
     with Image.open(source_path) as img:
         width, height = img.size
-        left = int(width * crop_left)
-        top = int(height * crop_top)
-        right = int(width * (1.0 - crop_right))
-        bottom = int(height * (1.0 - crop_bottom))
+        left = int(width * eff_left)
+        top = int(height * eff_top)
+        right = int(width * (1.0 - eff_right))
+        bottom = int(height * (1.0 - eff_bottom))
 
         if right <= left or bottom <= top:
+            img.save(output_path, format="PNG")
+            return output_path
+
+        retained_w_ratio = (right - left) / max(1, width)
+        retained_h_ratio = (bottom - top) / max(1, height)
+        retained_area_ratio = retained_w_ratio * retained_h_ratio
+
+        # If crop appears too aggressive, keep full image for readability.
+        if (
+            retained_w_ratio < min_retain
+            or retained_h_ratio < min_retain
+            or retained_area_ratio < (min_retain * min_retain)
+        ):
             img.save(output_path, format="PNG")
             return output_path
 

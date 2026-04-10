@@ -74,3 +74,22 @@ Requirements:
 
 Output only revised markdown.
 """.strip()
+
+
+IMAGE_SELECTION_PROMPT = """
+You are improving ONLY image usage quality in lecture notes.
+
+Input includes source bundle and current notes markdown.
+Revise notes with these constraints:
+- Keep explanations and section structure intact; do not remove core teaching content.
+- Keep ONLY necessary images that materially improve understanding.
+- Place image markers inline exactly where concept is explained, using:
+  ![descriptive caption](image_ref:<exact_image_ref_from_source>)
+- Captions must be descriptive only (no numbering like "Figure 2:").
+- Ensure nearby text references each image naturally as Figure N.
+- If an image is decorative/redundant, remove it.
+- Preserve formulas and tables.
+- Do NOT add internal tags like [Sx], [Ty], [C-S-...], [C-T-...].
+
+Output only revised markdown.
+""".strip()

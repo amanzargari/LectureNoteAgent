@@ -21,7 +21,7 @@ from .io_utils import (
     parse_transcript,
 )
 from .models import GenerationArtifacts, SourceBundle
-from .prompts import AUDIT_PROMPT, CHECKLIST_PROMPT, DRAFT_NOTES_PROMPT, REPAIR_PROMPT
+from .prompts import AUDIT_PROMPT, CHECKLIST_PROMPT, DRAFT_NOTES_PROMPT, IMAGE_SELECTION_PROMPT, REPAIR_PROMPT
 
 
 class LectureNoteAgent:
@@ -402,7 +402,7 @@ class LectureNoteAgent:
         if fast_mode:
             estimated_steps = 6
         else:
-            estimated_steps = max(8, 8 + (self.config.max_repair_loops * 2))
+            estimated_steps = max(9, 9 + (self.config.max_repair_loops * 2))
 
         step = 1
         self._emit_progress(progress_callback, "ingest", "Parsing slides and transcript", step, estimated_steps)
@@ -452,6 +452,38 @@ class LectureNoteAgent:
             model=self.config.model_draft,
             allow_continuation=allow_continuation,
         )
+
+        has_any_image_refs = any(getattr(s, "image_refs", None) for s in slides)
+        if (
+            not fast_mode
+            and has_any_image_refs
+            and bool(getattr(self.config, "enable_image_selection_refine", True))
+            and self._model_calls < self.config.max_model_calls
+        ):
+            step += 1
+            self._emit_progress(
+                progress_callback,
+                "image-refine",
+                "Refining inline image selection and captions",
+                step,
+                estimated_steps,
+            )
+            refine_input = (
+                f"## Source Bundle\n{source_payload}\n\n"
+                f"## Current Notes\n{notes_md}"
+            )
+            try:
+                refined_notes = self._chat(
+                    IMAGE_SELECTION_PROMPT,
+                    refine_input,
+                    temperature=0.1,
+                    model=getattr(self.config, "model_image_selection", self.config.model_draft),
+                    allow_continuation=False,
+                )
+                if isinstance(refined_notes, str) and refined_notes.strip():
+                    notes_md = refined_notes
+            except Exception:
+                pass
 
         if fast_mode:
             audit = {

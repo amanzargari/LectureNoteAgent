@@ -21,6 +21,10 @@ class AgentConfig:
     model_ocr: str = os.getenv("OPENAI_MODEL_OCR", "qwen/qwen3.5-122b-a10b")
     model_checklist: str = os.getenv("OPENAI_MODEL_CHECKLIST", os.getenv("OPENAI_MODEL", "qwen/qwen3.5-flash-02-23"))
     model_draft: str = os.getenv("OPENAI_MODEL_DRAFT", os.getenv("OPENAI_MODEL", "qwen/qwen3.5-flash-02-23"))
+    model_image_selection: str = os.getenv(
+        "OPENAI_MODEL_IMAGE_SELECTION",
+        os.getenv("OPENAI_MODEL_DRAFT", os.getenv("OPENAI_MODEL", "qwen/qwen3.5-flash-02-23")),
+    )
     model_audit: str = os.getenv("OPENAI_MODEL_AUDIT", os.getenv("OPENAI_MODEL", "qwen/qwen3.5-flash-02-23"))
     model_repair: str = os.getenv("OPENAI_MODEL_REPAIR", os.getenv("OPENAI_MODEL", "qwen/qwen3.5-flash-02-23"))
     api_key: str | None = os.getenv("OPENAI_API_KEY")
@@ -32,6 +36,7 @@ class AgentConfig:
     max_input_chars: int = int(os.getenv("MAX_INPUT_CHARS", "300000"))
     request_timeout_seconds: int = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "180"))
     max_repair_no_progress: int = int(os.getenv("MAX_REPAIR_NO_PROGRESS", "1"))
+    enable_image_selection_refine: bool = _env_bool("ENABLE_IMAGE_SELECTION_REFINE", True)
     fast_mode: bool = _env_bool("FAST_MODE", False)
     pdf_ocr_mode: str = os.getenv("PDF_OCR_MODE", "auto")
 
