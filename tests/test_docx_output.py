@@ -114,3 +114,50 @@ def test_write_docx_embeds_only_referenced_inline_images(tmp_path: Path) -> None
 
     assert len(media_files) == 1
     assert "Figure 1" in document_xml
+
+
+def test_write_docx_deduplicates_figure_prefix_in_caption(tmp_path: Path) -> None:
+    used_image = tmp_path / "used2.png"
+    Image.new("RGB", (200, 120), color=(100, 220, 120)).save(used_image)
+
+    output_docx = tmp_path / "dedupe_figure.docx"
+    write_docx_from_markdown(
+        markdown_text="![Figure 6: Datacenter Network Architecture](image_ref:used_ref)",
+        output_path=str(output_docx),
+        course_name="Course",
+        slide_images={
+            1: [SlideImageAsset(slide_number=1, image_ref="used_ref", image_path=str(used_image))],
+        },
+    )
+
+    with ZipFile(output_docx, "r") as archive:
+        document_xml = archive.read("word/document.xml").decode("utf-8", errors="ignore")
+
+    assert "Figure 1: Datacenter Network Architecture" in document_xml
+    assert "Figure 1: Figure 6:" not in document_xml
+
+
+def test_write_docx_fuzzy_image_ref_matching(tmp_path: Path) -> None:
+    used_image = tmp_path / "used3.png"
+    Image.new("RGB", (160, 90), color=(80, 160, 220)).save(used_image)
+
+    output_docx = tmp_path / "fuzzy_ref.docx"
+    write_docx_from_markdown(
+        markdown_text="![Architecture](image_ref:PPTX_SLIDE_1_IMAGE_1.PNG)",
+        output_path=str(output_docx),
+        course_name="Course",
+        slide_images={
+            1: [
+                SlideImageAsset(
+                    slide_number=1,
+                    image_ref="pptx_slide_1_image_1",
+                    image_path=str(used_image),
+                )
+            ],
+        },
+    )
+
+    with ZipFile(output_docx, "r") as archive:
+        media_files = [name for name in archive.namelist() if name.startswith("word/media/")]
+
+    assert len(media_files) == 1

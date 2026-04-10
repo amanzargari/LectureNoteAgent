@@ -28,6 +28,7 @@ Hard requirements:
 - Do NOT include internal source/checklist tags like [S52], [T9], [C-S-52-1], [C-T-T12-1].
 - Insert only NECESSARY images inline near the relevant explanation using exact markdown syntax:
   ![Figure caption](image_ref:<exact_image_ref_from_source>)
+- In image caption text, do NOT include numbering like "Figure 1:"; provide only descriptive caption text.
 - Each inserted image must be referenced in nearby text as Figure N (e.g., "As shown in Figure 2...").
 - Use markdown tables only when they improve clarity, and reference them in text as Table N.
 - Avoid low-value boilerplate and avoid repeating the same point in multiple sections.
@@ -67,6 +68,7 @@ Requirements:
 - Ensure all formulas are exact.
 - Keep only necessary inline images and place them where explained using:
   ![Figure caption](image_ref:<exact_image_ref_from_source>)
+- In image caption text, do NOT include numbering like "Figure 1:"; provide only descriptive caption text.
 - Ensure image/table usage is referenced in nearby prose as Figure N / Table N.
 - Remove internal source/checklist tags like [Sx], [Ty], [C-S-...], [C-T-...].
 
