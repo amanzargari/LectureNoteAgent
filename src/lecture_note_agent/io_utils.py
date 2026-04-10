@@ -276,21 +276,6 @@ def extract_slide_images(slides_path: str, artifacts_dir: str | None = None) -> 
             images = getattr(page, "images", []) or []
             for image_idx, img in enumerate(images, 1):
                 image_ref = getattr(img, "name", "") or f"pdf_page_{slide_number}_image_{image_idx}"
-                suffix = _safe_suffix(Path(image_ref).suffix)
-                image_path = image_root / f"slide_{slide_number}_{image_idx}{suffix}"
-
-                blob = getattr(img, "data", None)
-                if isinstance(blob, (bytes, bytearray)) and blob:
-                    image_path.write_bytes(bytes(blob))
-                    assets.append(
-                        SlideImageAsset(
-                            slide_number=slide_number,
-                            image_ref=image_ref,
-                            image_path=str(image_path),
-                        )
-                    )
-                    continue
-
                 pil_img = getattr(img, "image", None)
                 if pil_img is not None:
                     png_path = image_root / f"slide_{slide_number}_{image_idx}.png"
@@ -300,6 +285,20 @@ def extract_slide_images(slides_path: str, artifacts_dir: str | None = None) -> 
                             slide_number=slide_number,
                             image_ref=image_ref,
                             image_path=str(png_path),
+                        )
+                    )
+                    continue
+
+                suffix = _safe_suffix(Path(image_ref).suffix)
+                image_path = image_root / f"slide_{slide_number}_{image_idx}{suffix}"
+                blob = getattr(img, "data", None)
+                if isinstance(blob, (bytes, bytearray)) and blob:
+                    image_path.write_bytes(bytes(blob))
+                    assets.append(
+                        SlideImageAsset(
+                            slide_number=slide_number,
+                            image_ref=image_ref,
+                            image_path=str(image_path),
                         )
                     )
 

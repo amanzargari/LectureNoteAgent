@@ -39,6 +39,7 @@ def app() -> None:
         model_draft = st.text_input("OPENAI_MODEL_DRAFT", value=default_cfg.model_draft)
         model_audit = st.text_input("OPENAI_MODEL_AUDIT", value=default_cfg.model_audit)
         model_repair = st.text_input("OPENAI_MODEL_REPAIR", value=default_cfg.model_repair)
+        fast_mode = st.toggle("Fast mode (lower quality checks, faster output)", value=default_cfg.fast_mode)
         max_repair_loops = st.slider("Max repair loops", min_value=1, max_value=6, value=default_cfg.max_repair_loops)
         max_model_calls = st.slider("Max model calls", min_value=3, max_value=20, value=default_cfg.max_model_calls)
         max_output_tokens = st.slider("Max output tokens per call", min_value=512, max_value=8000, value=default_cfg.max_output_tokens, step=128)
@@ -83,6 +84,7 @@ def app() -> None:
                     max_model_calls=max_model_calls,
                     max_output_tokens=max_output_tokens,
                     max_input_chars=300000,
+                    fast_mode=fast_mode,
                 )
 
                 agent = LectureNoteAgent(config=config)
@@ -95,14 +97,22 @@ def app() -> None:
                     progress_bar.progress(ratio, text=msg)
                     progress_text.caption(f"{current}/{total} • {event.get('stage', 'run')}: {msg}")
 
-                artifacts = agent.run(
-                    course_name=course_name.strip() or "Untitled Course",
-                    slides_path=str(slides_path),
-                    transcript_path=str(transcript_path),
-                    output_path=str(output_path),
-                    artifacts_dir=str(artifacts_dir),
-                    progress_callback=_on_progress,
-                )
+                try:
+                    artifacts = agent.run(
+                        course_name=course_name.strip() or "Untitled Course",
+                        slides_path=str(slides_path),
+                        transcript_path=str(transcript_path),
+                        output_path=str(output_path),
+                        artifacts_dir=str(artifacts_dir),
+                        progress_callback=_on_progress,
+                    )
+                except RuntimeError as exc:
+                    st.error(str(exc))
+                    st.info(
+                        "Tip: increase MAX_MODEL_CALLS (or the sidebar 'Max model calls') "
+                        "to allow checklist/draft/repair passes to complete."
+                    )
+                    return
                 progress_bar.progress(1.0, text="Completed")
 
                 note_text = artifacts.final_markdown

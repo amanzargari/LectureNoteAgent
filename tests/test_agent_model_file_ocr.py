@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from lecture_note_agent.agent import LectureNoteAgent
-from lecture_note_agent.models import SlideUnit
+from lecture_note_agent.models import SlideUnit, TranscriptSegment
 
 
 def _build_agent() -> LectureNoteAgent:
@@ -142,3 +143,246 @@ def test_chat_continues_when_length_finish_reason(monkeypatch) -> None:
 
     assert "Three-Phase" in out
     assert "Item C" in out
+
+
+def test_run_stops_repair_when_model_limit_reached(tmp_path: Path, monkeypatch) -> None:
+    agent = _build_agent()
+
+    class Cfg:
+        max_repair_loops = 3
+        max_model_calls = 2
+        max_continuation_calls = 0
+        model = "dummy"
+        model_ocr = "dummy"
+        model_checklist = "dummy"
+        model_draft = "dummy"
+        model_audit = "dummy"
+        model_repair = "dummy"
+        max_output_tokens = 256
+        max_input_chars = 10000
+
+    agent.config = Cfg()
+    agent._model_calls = 0
+    agent._prompt_tokens = 0
+    agent._completion_tokens = 0
+    agent._total_tokens = 0
+
+    monkeypatch.setattr(
+        "lecture_note_agent.agent.parse_slides",
+        lambda _p: [SlideUnit(slide_number=1, title="S1", text="content", image_refs=[])],
+    )
+    monkeypatch.setattr(
+        "lecture_note_agent.agent.parse_transcript",
+        lambda _p: [TranscriptSegment(segment_id="T1", speaker="Teacher", text="hello")],
+    )
+    monkeypatch.setattr("lecture_note_agent.agent.build_source_payload", lambda *_a, **_k: "payload")
+    monkeypatch.setattr("lecture_note_agent.agent.extract_slide_images", lambda **_k: {})
+
+    def fake_write_docx_from_markdown(*, output_path: str, **_kwargs) -> None:
+        Path(output_path).write_bytes(b"docx")
+
+    monkeypatch.setattr("lecture_note_agent.agent.write_docx_from_markdown", fake_write_docx_from_markdown)
+
+    def fake_chat_once(**_kwargs):
+        agent._enforce_call_limit()
+        agent._model_calls += 1
+        return "ok", "stop"
+
+    monkeypatch.setattr(agent, "_chat_once", fake_chat_once)
+    monkeypatch.setattr(
+        agent,
+        "_audit_notes",
+        lambda *_a, **_k: {
+            "coverage_percent": 80,
+            "missing_items": ["C-1"],
+            "weak_items": [],
+            "issues": [],
+            "pass": False,
+        },
+    )
+
+    output_path = tmp_path / "notes.docx"
+    artifacts = agent.run(
+        course_name="Test Course",
+        slides_path=str(tmp_path / "slides.txt"),
+        transcript_path=str(tmp_path / "transcript.txt"),
+        output_path=str(output_path),
+        artifacts_dir=str(tmp_path / "artifacts"),
+    )
+
+    assert output_path.exists()
+    assert artifacts.model_calls == 2
+
+    audit = json.loads(artifacts.audit_json)
+    issues = [str(x).lower() for x in audit.get("issues", [])]
+    assert any("model call limit reached" in msg for msg in issues)
+
+
+def test_run_fast_mode_skips_audit_and_repair(tmp_path: Path, monkeypatch) -> None:
+    agent = _build_agent()
+
+    class Cfg:
+        fast_mode = True
+        pdf_ocr_mode = "auto"
+        max_repair_loops = 3
+        max_model_calls = 10
+        max_continuation_calls = 0
+        model = "dummy"
+        model_ocr = "dummy"
+        model_checklist = "dummy"
+        model_draft = "dummy"
+        model_audit = "dummy"
+        model_repair = "dummy"
+        max_output_tokens = 256
+        max_input_chars = 10000
+
+    agent.config = Cfg()
+    agent._model_calls = 0
+    agent._prompt_tokens = 0
+    agent._completion_tokens = 0
+    agent._total_tokens = 0
+
+    monkeypatch.setattr(
+        "lecture_note_agent.agent.parse_slides",
+        lambda _p: [SlideUnit(slide_number=1, title="S1", text="content", image_refs=[])],
+    )
+    monkeypatch.setattr(
+        "lecture_note_agent.agent.parse_transcript",
+        lambda _p: [TranscriptSegment(segment_id="T1", speaker="Teacher", text="hello")],
+    )
+    monkeypatch.setattr("lecture_note_agent.agent.build_source_payload", lambda *_a, **_k: "payload")
+    monkeypatch.setattr("lecture_note_agent.agent.extract_slide_images", lambda **_k: {})
+
+    def fake_write_docx_from_markdown(*, output_path: str, **_kwargs) -> None:
+        Path(output_path).write_bytes(b"docx")
+
+    monkeypatch.setattr("lecture_note_agent.agent.write_docx_from_markdown", fake_write_docx_from_markdown)
+
+    def fake_chat_once(**_kwargs):
+        agent._enforce_call_limit()
+        agent._model_calls += 1
+        return "ok", "stop"
+
+    monkeypatch.setattr(agent, "_chat_once", fake_chat_once)
+
+    def _should_not_be_called(*_args, **_kwargs):
+        raise AssertionError("_audit_notes should not run in fast mode")
+
+    monkeypatch.setattr(agent, "_audit_notes", _should_not_be_called)
+
+    output_path = tmp_path / "notes.docx"
+    artifacts = agent.run(
+        course_name="Fast Course",
+        slides_path=str(tmp_path / "slides.txt"),
+        transcript_path=str(tmp_path / "transcript.txt"),
+        output_path=str(output_path),
+        artifacts_dir=str(tmp_path / "artifacts"),
+    )
+
+    assert output_path.exists()
+    assert artifacts.model_calls == 2
+
+    audit = json.loads(artifacts.audit_json)
+    assert any("fast mode enabled" in str(msg).lower() for msg in audit.get("issues", []))
+
+
+def test_run_stops_repair_when_output_repeats(tmp_path: Path, monkeypatch) -> None:
+    agent = _build_agent()
+
+    class Cfg:
+        fast_mode = False
+        pdf_ocr_mode = "auto"
+        max_repair_loops = 3
+        max_model_calls = 10
+        max_continuation_calls = 0
+        max_repair_no_progress = 1
+        request_timeout_seconds = 60
+        model = "dummy"
+        model_ocr = "dummy"
+        model_checklist = "dummy"
+        model_draft = "dummy"
+        model_audit = "dummy"
+        model_repair = "dummy"
+        max_output_tokens = 256
+        max_input_chars = 10000
+
+    agent.config = Cfg()
+    agent._model_calls = 0
+    agent._prompt_tokens = 0
+    agent._completion_tokens = 0
+    agent._total_tokens = 0
+
+    monkeypatch.setattr(
+        "lecture_note_agent.agent.parse_slides",
+        lambda _p: [SlideUnit(slide_number=1, title="S1", text="content", image_refs=[])],
+    )
+    monkeypatch.setattr(
+        "lecture_note_agent.agent.parse_transcript",
+        lambda _p: [TranscriptSegment(segment_id="T1", speaker="Teacher", text="hello")],
+    )
+    monkeypatch.setattr("lecture_note_agent.agent.build_source_payload", lambda *_a, **_k: "payload")
+    monkeypatch.setattr("lecture_note_agent.agent.extract_slide_images", lambda **_k: {})
+
+    def fake_write_docx_from_markdown(*, output_path: str, **_kwargs) -> None:
+        Path(output_path).write_bytes(b"docx")
+
+    monkeypatch.setattr("lecture_note_agent.agent.write_docx_from_markdown", fake_write_docx_from_markdown)
+
+    def fake_chat(system_prompt: str, _user_prompt: str, **_kwargs) -> str:
+        if "coverage checklist" in system_prompt.lower() or "academic lecture auditor" in system_prompt.lower():
+            return "checklist"
+        if "lecture-note agent" in system_prompt.lower():
+            return "BASE NOTES"
+        return "BASE NOTES"
+
+    monkeypatch.setattr(agent, "_chat", fake_chat)
+
+    audit_calls = {"count": 0}
+
+    def fake_audit(*_args, **_kwargs):
+        audit_calls["count"] += 1
+        return {
+            "coverage_percent": 70,
+            "missing_items": ["C-1"],
+            "weak_items": [],
+            "issues": [],
+            "pass": False,
+        }
+
+    monkeypatch.setattr(agent, "_audit_notes", fake_audit)
+
+    output_path = tmp_path / "notes.docx"
+    artifacts = agent.run(
+        course_name="Repeat Course",
+        slides_path=str(tmp_path / "slides.txt"),
+        transcript_path=str(tmp_path / "transcript.txt"),
+        output_path=str(output_path),
+        artifacts_dir=str(tmp_path / "artifacts"),
+    )
+
+    assert output_path.exists()
+    assert audit_calls["count"] == 1
+
+    audit = json.loads(artifacts.audit_json)
+    issues = [str(msg).lower() for msg in audit.get("issues", [])]
+    assert any("repair appears stuck" in msg for msg in issues)
+
+
+def test_sanitize_final_markdown_removes_internal_refs_and_placeholder_section() -> None:
+    agent = _build_agent()
+    dirty = (
+        "## Topic [S52] [C-S-52-1]\n"
+        "Text line [T10].\n\n"
+        "## Image Placeholders to Add Later\n"
+        "- img_ref_1\n"
+        "- img_ref_2\n\n"
+        "## Next\n"
+        "Content"
+    )
+
+    cleaned = agent._sanitize_final_markdown(dirty)
+    assert "[S52]" not in cleaned
+    assert "[T10]" not in cleaned
+    assert "[C-S-52-1]" not in cleaned
+    assert "Image Placeholders to Add Later" not in cleaned
+    assert "## Next" in cleaned

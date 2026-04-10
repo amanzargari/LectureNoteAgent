@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import importlib
+import re
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -89,10 +91,12 @@ class LectureNoteAgent:
         self._enforce_call_limit()
         self._model_calls += 1
         resolved_model = (model or self.config.model).strip()
+        timeout_seconds = max(1, int(getattr(self.config, "request_timeout_seconds", 180) or 180))
         response = self.client.chat.completions.create(
             model=resolved_model,
             temperature=temperature,
             max_tokens=self.config.max_output_tokens,
+            timeout=timeout_seconds,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt[: self.config.max_input_chars]},
@@ -136,12 +140,17 @@ class LectureNoteAgent:
                 "Document tail:\n"
                 f"{tail}"
             )
-            next_chunk, finish_reason = self._chat_once(
-                system_prompt=system_prompt,
-                user_prompt=continuation_prompt,
-                temperature=temperature,
-                model=model,
-            )
+            try:
+                next_chunk, finish_reason = self._chat_once(
+                    system_prompt=system_prompt,
+                    user_prompt=continuation_prompt,
+                    temperature=temperature,
+                    model=model,
+                )
+            except RuntimeError as exc:
+                if "Model call limit reached" in str(exc):
+                    break
+                raise
             if not next_chunk.strip():
                 break
             combined += next_chunk.lstrip()
@@ -182,9 +191,11 @@ class LectureNoteAgent:
             self._enforce_call_limit()
             self._model_calls += 1
             resolved_model = (model or self.config.model_ocr or self.config.model).strip()
+            timeout_seconds = max(1, int(getattr(self.config, "request_timeout_seconds", 180) or 180))
             response = self.client.responses.create(
                 model=resolved_model,
                 max_output_tokens=self.config.max_output_tokens,
+                timeout=timeout_seconds,
                 input=[
                     {
                         "role": "user",
@@ -351,6 +362,31 @@ class LectureNoteAgent:
                 "pass": False,
             }
 
+    def _normalize_text_for_compare(self, text: str) -> str:
+        return " ".join((text or "").split())
+
+    def _text_fingerprint(self, text: str) -> str:
+        normalized = self._normalize_text_for_compare(text)
+        return hashlib.sha1(normalized.encode("utf-8")).hexdigest()
+
+    def _sanitize_final_markdown(self, notes_md: str) -> str:
+        text = notes_md or ""
+
+        # Remove internal source/checklist tags that are useful for auditing but noisy for users.
+        text = re.sub(r"\[(?:S\d+|T\d+|C-[ST]-[^\]]+)\]", "", text)
+
+        # Remove old placeholder section if model still emits it.
+        text = re.sub(
+            r"(?is)\n##\s*Image Placeholders to Add Later\b.*?(?=\n##\s|\Z)",
+            "\n",
+            text,
+        )
+
+        # Cleanup whitespace artifacts after tag removals.
+        text = re.sub(r"[ \t]{2,}", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
     def run(
         self,
         course_name: str,
@@ -360,17 +396,30 @@ class LectureNoteAgent:
         artifacts_dir: str | None = None,
         progress_callback: Callable[[dict], None] | None = None,
     ) -> GenerationArtifacts:
-        estimated_steps = max(8, 8 + (self.config.max_repair_loops * 2))
+        fast_mode = bool(getattr(self.config, "fast_mode", False))
+        allow_continuation = not fast_mode
+
+        if fast_mode:
+            estimated_steps = 6
+        else:
+            estimated_steps = max(8, 8 + (self.config.max_repair_loops * 2))
+
         step = 1
         self._emit_progress(progress_callback, "ingest", "Parsing slides and transcript", step, estimated_steps)
         slides = parse_slides(slides_path)
         if Path(slides_path).suffix.lower() == ".pdf":
+            ocr_mode = str(getattr(self.config, "pdf_ocr_mode", "auto") or "auto").strip().lower()
+            if ocr_mode not in {"auto", "whole", "page"}:
+                ocr_mode = "auto"
+            if fast_mode:
+                ocr_mode = "whole"
+
             step += 1
             self._emit_progress(progress_callback, "ocr", "Running model OCR on PDF", step, estimated_steps)
             slides = self._merge_model_ocr_text(
                 slides_path=slides_path,
                 slides=slides,
-                mode="auto",
+                mode=ocr_mode,
             )
 
         transcript = parse_transcript(transcript_path)
@@ -387,7 +436,7 @@ class LectureNoteAgent:
             f"Generate coverage checklist from this source bundle:\n\n{source_payload}",
             temperature=0,
             model=self.config.model_checklist,
-            allow_continuation=True,
+            allow_continuation=allow_continuation,
         )
 
         draft_input = (
@@ -401,47 +450,137 @@ class LectureNoteAgent:
             draft_input,
             temperature=0.2,
             model=self.config.model_draft,
-            allow_continuation=True,
+            allow_continuation=allow_continuation,
         )
 
-        step += 1
-        self._emit_progress(progress_callback, "audit", "Auditing coverage and quality", step, estimated_steps)
-        audit = self._audit_notes(checklist_md, source_payload, notes_md)
-
-        for i in range(self.config.max_repair_loops):
-            if audit.get("pass") is True:
-                break
-
+        if fast_mode:
+            audit = {
+                "coverage_percent": 0,
+                "missing_items": [],
+                "weak_items": [],
+                "issues": ["Fast mode enabled: skipped audit and repair loop for speed."],
+                "pass": False,
+            }
+        else:
             step += 1
-            self._emit_progress(
-                progress_callback,
-                "repair",
-                f"Repair pass {i + 1}: regenerating missing sections",
-                step,
-                estimated_steps,
-            )
-            repair_input = (
-                f"## Audit JSON\n{json.dumps(audit, ensure_ascii=False, indent=2)}\n\n"
-                f"## Checklist\n{checklist_md}\n\n"
-                f"## Source Bundle\n{source_payload}\n\n"
-                f"## Current Notes\n{notes_md}"
-            )
-            notes_md = self._chat(
-                REPAIR_PROMPT,
-                repair_input,
-                temperature=0.1,
-                model=self.config.model_repair,
-                allow_continuation=True,
-            )
-            step += 1
-            self._emit_progress(
-                progress_callback,
-                "re-audit",
-                f"Repair pass {i + 1}: re-auditing notes",
-                step,
-                estimated_steps,
-            )
+            self._emit_progress(progress_callback, "audit", "Auditing coverage and quality", step, estimated_steps)
             audit = self._audit_notes(checklist_md, source_payload, notes_md)
+
+            seen_repair_fingerprints: set[str] = {self._text_fingerprint(notes_md)}
+            no_progress_passes = 0
+            max_no_progress = max(1, int(getattr(self.config, "max_repair_no_progress", 1) or 1))
+
+            for i in range(self.config.max_repair_loops):
+                if audit.get("pass") is True:
+                    break
+
+                if self._model_calls >= self.config.max_model_calls:
+                    issues = list(audit.get("issues") or [])
+                    issues.append(
+                        f"Stopped repair loop early: model call limit reached ({self.config.max_model_calls})."
+                    )
+                    audit["issues"] = issues
+                    break
+
+                step += 1
+                self._emit_progress(
+                    progress_callback,
+                    "repair",
+                    f"Repair pass {i + 1}: regenerating missing sections",
+                    step,
+                    estimated_steps,
+                )
+                repair_input = (
+                    f"## Audit JSON\n{json.dumps(audit, ensure_ascii=False, indent=2)}\n\n"
+                    f"## Checklist\n{checklist_md}\n\n"
+                    f"## Source Bundle\n{source_payload}\n\n"
+                    f"## Current Notes\n{notes_md}"
+                )
+                previous_notes_md = notes_md
+                try:
+                    repaired_notes_md = self._chat(
+                        REPAIR_PROMPT,
+                        repair_input,
+                        temperature=0.1,
+                        model=self.config.model_repair,
+                        allow_continuation=allow_continuation,
+                    )
+                except RuntimeError as exc:
+                    if "Model call limit reached" in str(exc):
+                        issues = list(audit.get("issues") or [])
+                        issues.append(
+                            f"Stopped repair generation: model call limit reached ({self.config.max_model_calls})."
+                        )
+                        audit["issues"] = issues
+                        break
+                    raise
+                except Exception as exc:
+                    issues = list(audit.get("issues") or [])
+                    issues.append(f"Stopped repair generation due to model timeout/error: {exc}")
+                    audit["issues"] = issues
+                    break
+
+                repaired_notes_md = (repaired_notes_md or "").strip()
+                if not repaired_notes_md:
+                    issues = list(audit.get("issues") or [])
+                    issues.append("Repair appears stuck: model returned empty content.")
+                    audit["issues"] = issues
+                    break
+
+                repaired_fingerprint = self._text_fingerprint(repaired_notes_md)
+                if repaired_fingerprint in seen_repair_fingerprints:
+                    issues = list(audit.get("issues") or [])
+                    issues.append("Repair appears stuck: repeated output detected.")
+                    audit["issues"] = issues
+                    break
+
+                if self._normalize_text_for_compare(repaired_notes_md) == self._normalize_text_for_compare(previous_notes_md):
+                    no_progress_passes += 1
+                    if no_progress_passes >= max_no_progress:
+                        issues = list(audit.get("issues") or [])
+                        issues.append("Repair appears stuck: model returned unchanged content.")
+                        audit["issues"] = issues
+                        break
+                else:
+                    no_progress_passes = 0
+
+                seen_repair_fingerprints.add(repaired_fingerprint)
+                notes_md = repaired_notes_md
+
+                if self._model_calls >= self.config.max_model_calls:
+                    issues = list(audit.get("issues") or [])
+                    issues.append(
+                        f"Skipped re-audit: model call limit reached ({self.config.max_model_calls})."
+                    )
+                    audit["issues"] = issues
+                    break
+
+                step += 1
+                self._emit_progress(
+                    progress_callback,
+                    "re-audit",
+                    f"Repair pass {i + 1}: re-auditing notes",
+                    step,
+                    estimated_steps,
+                )
+                try:
+                    audit = self._audit_notes(checklist_md, source_payload, notes_md)
+                except RuntimeError as exc:
+                    if "Model call limit reached" in str(exc):
+                        issues = list(audit.get("issues") or [])
+                        issues.append(
+                            f"Stopped re-audit: model call limit reached ({self.config.max_model_calls})."
+                        )
+                        audit["issues"] = issues
+                        break
+                    raise
+                except Exception as exc:
+                    issues = list(audit.get("issues") or [])
+                    issues.append(f"Stopped re-audit due to timeout/error: {exc}")
+                    audit["issues"] = issues
+                    break
+
+        final_notes_md = self._sanitize_final_markdown(notes_md)
 
         step += 1
         self._emit_progress(progress_callback, "write", "Writing output and artifacts", step, estimated_steps)
@@ -454,7 +593,7 @@ class LectureNoteAgent:
             slide_images = {}
 
         write_docx_from_markdown(
-            markdown_text=notes_md,
+            markdown_text=final_notes_md,
             output_path=str(out_path),
             course_name=course_name,
             slide_images=slide_images,
@@ -466,7 +605,7 @@ class LectureNoteAgent:
             (art / "source_bundle.json").write_text(source.model_dump_json(indent=2), encoding="utf-8")
             (art / "checklist.md").write_text(checklist_md, encoding="utf-8")
             (art / "audit.json").write_text(json.dumps(audit, indent=2), encoding="utf-8")
-            (art / "draft_or_final_notes.md").write_text(notes_md, encoding="utf-8")
+            (art / "draft_or_final_notes.md").write_text(final_notes_md, encoding="utf-8")
 
         self._emit_progress(
             progress_callback,
@@ -479,7 +618,7 @@ class LectureNoteAgent:
         return GenerationArtifacts(
             checklist_markdown=checklist_md,
             draft_markdown=notes_md,
-            final_markdown=notes_md,
+            final_markdown=final_notes_md,
             audit_json=json.dumps(audit, indent=2),
             model_calls=self._model_calls,
             prompt_tokens=self._prompt_tokens,

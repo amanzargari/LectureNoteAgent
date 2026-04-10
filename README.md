@@ -55,6 +55,8 @@ and generates a **comprehensive DOCX lecture note** that:
    - `MAX_REPAIR_LOOPS=3`
    - `MAX_MODEL_CALLS=6`
    - `MAX_OUTPUT_TOKENS=3500`
+   - `FAST_MODE=false` (set `true` for faster runs)
+   - `PDF_OCR_MODE=auto` (`whole` is usually faster than `auto`)
 
 The app now uses an OpenAI-compatible client only. Keep credentials in `.env` only.
 
@@ -75,6 +77,15 @@ Or after editable install (`pip install -e .`):
 - `auto`: tries `whole` first, then falls back to `page` for weak/missing pages.
 
 This strategy is always used for PDFs; no OCR toggles are required in UI/CLI/env.
+
+### Speed tuning
+
+If runs feel slow, use one or more of these:
+
+- Enable `FAST_MODE=true` (skips audit/repair loop, disables continuation calls, uses whole-PDF OCR)
+- Set `PDF_OCR_MODE=whole` for faster OCR on large PDFs
+- Reduce `MAX_REPAIR_LOOPS` and `MAX_OUTPUT_TOKENS`
+- Use a faster model for draft/checklist phases
 
 ### Multi-model by phase
 
