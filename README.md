@@ -5,12 +5,13 @@ This project builds a **full AI agent** that takes:
 - course slides (`.pdf`, `.pptx`, `.md`, `.txt`)
 - class transcript (`.txt` / `.md`)
 
-and generates a **comprehensive markdown lecture note** that:
+and generates a **comprehensive DOCX lecture note** that:
 
 - covers slide content + teacher speech
 - keeps a clean, structured format
 - highlights special mentions from instructor
-- includes exact image references for later insertion
+- embeds extracted slide images directly in the DOCX file
+- applies slide-image cropping metadata (for PPTX images) before embedding
 - extracts and preserves formulas
 - validates coverage and repairs missing points automatically
 
@@ -20,6 +21,7 @@ and generates a **comprehensive markdown lecture note** that:
 - **Model-only OCR for PDFs** (automatic whole-file + page fallback)
 - **Coverage checklist generation** (atomic items with IDs)
 - **Lecture-note drafting** with references like `[S3]`, `[T17]`
+- **DOCX export** with attached images embedded in the final file
 - **Strict validation pass** with JSON audit
 - **Auto-repair loop** to fill dropped/missing content
 - **Artifacts export** (`checklist.md`, `audit.json`, `source_bundle.json`)
@@ -60,11 +62,11 @@ The app now uses an OpenAI-compatible client only. Keep credentials in `.env` on
 
 Run from project root:
 
-`python -m lecture_note_agent --course-name "Data Structures" --slides ./input/week1.pdf --transcript ./input/week1_transcript.txt --output ./output/week1_lecture_notes.md --artifacts-dir ./artifacts/week1`
+`python -m lecture_note_agent --course-name "Data Structures" --slides ./input/week1.pdf --transcript ./input/week1_transcript.txt --output ./output/week1_lecture_notes.docx --artifacts-dir ./artifacts/week1`
 
 Or after editable install (`pip install -e .`):
 
-`slideagent --course-name "Data Structures" --slides ./input/week1.pdf --transcript ./input/week1_transcript.txt --output ./output/week1_lecture_notes.md --artifacts-dir ./artifacts/week1`
+`slideagent --course-name "Data Structures" --slides ./input/week1.pdf --transcript ./input/week1_transcript.txt --output ./output/week1_lecture_notes.docx --artifacts-dir ./artifacts/week1`
 
 ### PDF OCR strategy (automatic)
 
@@ -106,16 +108,16 @@ Then open `http://localhost:8501`.
 
 ## Output Quality Contract
 
-The generated markdown is designed to include:
+The generated DOCX is designed to include:
 
 1. Full lecture structure (headings/subheadings)
 2. All concepts from slides and transcript
 3. Special instructor instructions/reminders
-4. Image placeholder section with exact refs from source
+4. Embedded slide images with exact refs from source
 5. Formula sheet with exact formula text
 6. Inline source references for traceability
 
-Validation ensures high coverage, then repair loop attempts to fix any missing items before final output is written.
+Validation ensures high coverage, then repair loop attempts to fix any missing items before final DOCX output is written.
 
 ## Notes
 

@@ -9,8 +9,10 @@ from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 
 from .config import AgentConfig, ensure_api_key
+from .docx_utils import write_docx_from_markdown
 from .io_utils import (
     build_source_payload,
+    extract_slide_images,
     extract_formula_candidates,
     has_meaningful_text,
     parse_slides,
@@ -445,7 +447,18 @@ class LectureNoteAgent:
         self._emit_progress(progress_callback, "write", "Writing output and artifacts", step, estimated_steps)
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(notes_md, encoding="utf-8")
+
+        try:
+            slide_images = extract_slide_images(slides_path=slides_path, artifacts_dir=artifacts_dir)
+        except Exception:
+            slide_images = {}
+
+        write_docx_from_markdown(
+            markdown_text=notes_md,
+            output_path=str(out_path),
+            course_name=course_name,
+            slide_images=slide_images,
+        )
 
         if artifacts_dir:
             art = Path(artifacts_dir)

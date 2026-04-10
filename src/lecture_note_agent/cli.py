@@ -13,7 +13,7 @@ console = Console()
 @click.option("--course-name", required=True, help="Course name for note title/context.")
 @click.option("--slides", "slides_path", required=True, type=click.Path(exists=True), help="Path to slides (.pdf, .pptx, .md, .txt).")
 @click.option("--transcript", "transcript_path", required=True, type=click.Path(exists=True), help="Path to transcript text file.")
-@click.option("--output", "output_path", required=True, type=click.Path(), help="Output markdown file path.")
+@click.option("--output", "output_path", required=True, type=click.Path(), help="Output DOCX file path.")
 @click.option("--artifacts-dir", default="./artifacts", show_default=True, type=click.Path(), help="Directory for checklist/audit artifacts.")
 def main(
     course_name: str,

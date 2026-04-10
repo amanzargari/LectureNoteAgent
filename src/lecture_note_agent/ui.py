@@ -66,7 +66,7 @@ def app() -> None:
                 tmp = Path(tmp_dir)
                 slides_path = tmp / slides_file.name
                 transcript_path = tmp / transcript_file.name
-                output_path = tmp / "lecture_notes.md"
+                output_path = tmp / "lecture_notes.docx"
                 artifacts_dir = tmp / "artifacts"
 
                 _save_uploaded(slides_file, slides_path)
@@ -105,10 +105,12 @@ def app() -> None:
                 )
                 progress_bar.progress(1.0, text="Completed")
 
-                note_text = output_path.read_text(encoding="utf-8")
+                note_text = artifacts.final_markdown
+                output_docx = output_path.read_bytes()
 
                 st.session_state["last_run"] = {
                     "note_text": note_text,
+                    "output_docx": output_docx,
                     "audit_json": artifacts.audit_json,
                     "checklist_text": artifacts.checklist_markdown,
                     "model_calls": int(getattr(artifacts, "model_calls", 0) or 0),
@@ -132,10 +134,10 @@ def app() -> None:
             st.subheader("Lecture Notes")
             st.markdown(last_run.get("note_text", ""))
             st.download_button(
-                "Download lecture_notes.md",
-                data=last_run.get("note_text", ""),
-                file_name="lecture_notes.md",
-                mime="text/markdown",
+                "Download lecture_notes.docx",
+                data=last_run.get("output_docx", b""),
+                file_name="lecture_notes.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 use_container_width=True,
                 key="download_lecture_notes",
             )

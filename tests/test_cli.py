@@ -26,7 +26,7 @@ def test_cli_passes_basic_arguments(monkeypatch, tmp_path: Path) -> None:
 
     slides = tmp_path / "slides.pdf"
     transcript = tmp_path / "transcript.txt"
-    output = tmp_path / "notes.md"
+    output = tmp_path / "notes.docx"
 
     slides.write_bytes(b"%PDF-1.4\n%stub\n")
     transcript.write_text("Teacher: hello", encoding="utf-8")

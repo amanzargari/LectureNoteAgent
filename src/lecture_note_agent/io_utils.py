@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
@@ -16,6 +17,13 @@ MATH_PATTERNS = [
     r"\b[A-Za-z]\s*=\s*[^\n]{1,40}",
     r"\$[^$]+\$",
 ]
+
+
+@dataclass(frozen=True)
+class SlideImageAsset:
+    slide_number: int
+    image_ref: str
+    image_path: str
 
 
 def _extract_formula_candidates(text: str) -> List[str]:
@@ -189,3 +197,166 @@ def build_source_payload(course_name: str, slides: List[SlideUnit], transcript: 
         f"## Transcript Segments ({len(transcript)})\n" + "\n".join(transcript_blocks)
     )
     return payload
+
+
+def _normalize_crop_fraction(value: object) -> float:
+    if value is None:
+        return 0.0
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+    if out > 1.0:
+        out = out / 100000.0
+    if out < 0:
+        return 0.0
+    return min(out, 0.95)
+
+
+def _crop_image(
+    source_path: Path,
+    output_path: Path,
+    crop_left: float,
+    crop_top: float,
+    crop_right: float,
+    crop_bottom: float,
+) -> Path:
+    from PIL import Image
+
+    with Image.open(source_path) as img:
+        width, height = img.size
+        left = int(width * crop_left)
+        top = int(height * crop_top)
+        right = int(width * (1.0 - crop_right))
+        bottom = int(height * (1.0 - crop_bottom))
+
+        if right <= left or bottom <= top:
+            img.save(output_path, format="PNG")
+            return output_path
+
+        cropped = img.crop((left, top, right, bottom))
+        cropped.save(output_path, format="PNG")
+    return output_path
+
+
+def _safe_suffix(suffix: str, default: str = ".png") -> str:
+    normalized = (suffix or "").strip().lower()
+    if normalized.startswith("."):
+        ext = normalized
+    else:
+        ext = f".{normalized}" if normalized else default
+
+    if ext in {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp"}:
+        return ext
+    return default
+
+
+def extract_slide_images(slides_path: str, artifacts_dir: str | None = None) -> dict[int, list[SlideImageAsset]]:
+    """Extract concrete slide images for embedding in final DOCX output.
+
+    For PPTX, respects picture crop metadata and exports cropped images.
+    """
+    source = Path(slides_path)
+    ext = source.suffix.lower()
+
+    if artifacts_dir:
+        root = Path(artifacts_dir)
+    else:
+        root = source.parent
+    image_root = root / "extracted_images"
+    image_root.mkdir(parents=True, exist_ok=True)
+
+    slide_images: dict[int, list[SlideImageAsset]] = {}
+
+    if ext == ".pdf":
+        reader = PdfReader(str(source))
+        for slide_number, page in enumerate(reader.pages, 1):
+            assets: list[SlideImageAsset] = []
+            images = getattr(page, "images", []) or []
+            for image_idx, img in enumerate(images, 1):
+                image_ref = getattr(img, "name", "") or f"pdf_page_{slide_number}_image_{image_idx}"
+                suffix = _safe_suffix(Path(image_ref).suffix)
+                image_path = image_root / f"slide_{slide_number}_{image_idx}{suffix}"
+
+                blob = getattr(img, "data", None)
+                if isinstance(blob, (bytes, bytearray)) and blob:
+                    image_path.write_bytes(bytes(blob))
+                    assets.append(
+                        SlideImageAsset(
+                            slide_number=slide_number,
+                            image_ref=image_ref,
+                            image_path=str(image_path),
+                        )
+                    )
+                    continue
+
+                pil_img = getattr(img, "image", None)
+                if pil_img is not None:
+                    png_path = image_root / f"slide_{slide_number}_{image_idx}.png"
+                    pil_img.save(png_path)
+                    assets.append(
+                        SlideImageAsset(
+                            slide_number=slide_number,
+                            image_ref=image_ref,
+                            image_path=str(png_path),
+                        )
+                    )
+
+            if assets:
+                slide_images[slide_number] = assets
+
+        return slide_images
+
+    if ext == ".pptx":
+        prs = Presentation(str(source))
+        for slide_number, slide in enumerate(prs.slides, 1):
+            assets: list[SlideImageAsset] = []
+            image_idx = 0
+
+            for shape in slide.shapes:
+                if getattr(shape, "shape_type", None) != 13:
+                    continue
+
+                image_idx += 1
+                image_ref = getattr(shape, "name", "") or f"pptx_slide_{slide_number}_image_{image_idx}"
+                pic = getattr(shape, "image", None)
+                if pic is None:
+                    continue
+
+                suffix = _safe_suffix(getattr(pic, "ext", "png"))
+                original_path = image_root / f"slide_{slide_number}_{image_idx}_orig{suffix}"
+                original_path.write_bytes(pic.blob)
+
+                crop_left = _normalize_crop_fraction(getattr(shape, "crop_left", 0.0))
+                crop_top = _normalize_crop_fraction(getattr(shape, "crop_top", 0.0))
+                crop_right = _normalize_crop_fraction(getattr(shape, "crop_right", 0.0))
+                crop_bottom = _normalize_crop_fraction(getattr(shape, "crop_bottom", 0.0))
+
+                if any(v > 0 for v in (crop_left, crop_top, crop_right, crop_bottom)):
+                    cropped_path = image_root / f"slide_{slide_number}_{image_idx}_cropped.png"
+                    final_path = _crop_image(
+                        source_path=original_path,
+                        output_path=cropped_path,
+                        crop_left=crop_left,
+                        crop_top=crop_top,
+                        crop_right=crop_right,
+                        crop_bottom=crop_bottom,
+                    )
+                else:
+                    final_path = original_path
+
+                assets.append(
+                    SlideImageAsset(
+                        slide_number=slide_number,
+                        image_ref=image_ref,
+                        image_path=str(final_path),
+                    )
+                )
+
+            if assets:
+                slide_images[slide_number] = assets
+
+        return slide_images
+
+    return slide_images
