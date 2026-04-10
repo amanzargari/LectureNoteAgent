@@ -75,3 +75,8 @@ output/
 artifacts/
 tmp/
 *.log
+
+
+# -----------------------------
+
+models.json

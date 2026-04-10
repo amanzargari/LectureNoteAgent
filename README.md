@@ -1,4 +1,4 @@
-# SlideAGENT — Full Lecture Note Generator
+# LectureNoteAgent — Full Lecture Note Generator
 
 This project builds a **full AI agent** that takes:
 
