@@ -87,20 +87,50 @@ class LectureNoteAgent:
         user_prompt: str,
         temperature: float = 0.1,
         model: str | None = None,
+        on_token: Callable[[str], None] | None = None,
     ) -> tuple[str, str | None]:
         self._enforce_call_limit()
         self._model_calls += 1
         resolved_model = (model or self.config.model).strip()
         timeout_seconds = max(1, int(getattr(self.config, "request_timeout_seconds", 180) or 180))
+        msgs = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt[: self.config.max_input_chars]},
+        ]
+
+        if on_token is not None:
+            try:
+                content = ""
+                finish_reason = None
+                with self.client.chat.completions.create(
+                    model=resolved_model,
+                    temperature=temperature,
+                    max_tokens=self.config.max_output_tokens,
+                    timeout=timeout_seconds,
+                    stream=True,
+                    messages=msgs,
+                ) as stream:
+                    for chunk in stream:
+                        choice = chunk.choices[0] if chunk.choices else None
+                        if not choice:
+                            continue
+                        delta = (choice.delta.content or "") if choice.delta else ""
+                        if delta:
+                            content += delta
+                            on_token(delta)
+                        if getattr(choice, "finish_reason", None):
+                            finish_reason = choice.finish_reason
+                return content, finish_reason
+            except Exception:
+                # Fall back to non-streaming if the model/provider rejects stream=True
+                pass
+
         response = self.client.chat.completions.create(
             model=resolved_model,
             temperature=temperature,
             max_tokens=self.config.max_output_tokens,
             timeout=timeout_seconds,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt[: self.config.max_input_chars]},
-            ],
+            messages=msgs,
         )
         self._accumulate_usage(getattr(response, "usage", None))
         choice = response.choices[0]
@@ -115,12 +145,14 @@ class LectureNoteAgent:
         temperature: float = 0.1,
         model: str | None = None,
         allow_continuation: bool = False,
+        on_token: Callable[[str], None] | None = None,
     ) -> str:
         text, finish_reason = self._chat_once(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             temperature=temperature,
             model=model,
+            on_token=on_token,
         )
         if not allow_continuation:
             return text
@@ -146,6 +178,7 @@ class LectureNoteAgent:
                     user_prompt=continuation_prompt,
                     temperature=temperature,
                     model=model,
+                    on_token=on_token,
                 )
             except RuntimeError as exc:
                 if "Model call limit reached" in str(exc):
@@ -443,6 +476,13 @@ class LectureNoteAgent:
             f"## Checklist\n{checklist_md}\n\n"
             f"## Source Bundle\n{source_payload}\n"
         )
+        def _token_cb(stage_name: str) -> Callable[[str], None] | None:
+            if progress_callback is None:
+                return None
+            def _cb(tok: str) -> None:
+                progress_callback({"type": "token", "stage": stage_name, "text": tok})
+            return _cb
+
         step += 1
         self._emit_progress(progress_callback, "draft", "Drafting lecture notes", step, estimated_steps)
         notes_md = self._chat(
@@ -451,6 +491,7 @@ class LectureNoteAgent:
             temperature=0.2,
             model=self.config.model_draft,
             allow_continuation=allow_continuation,
+            on_token=_token_cb("draft"),
         )
 
         has_any_image_refs = any(getattr(s, "image_refs", None) for s in slides)
@@ -536,6 +577,7 @@ class LectureNoteAgent:
                         temperature=0.1,
                         model=self.config.model_repair,
                         allow_continuation=allow_continuation,
+                        on_token=_token_cb("repair"),
                     )
                 except RuntimeError as exc:
                     if "Model call limit reached" in str(exc):
