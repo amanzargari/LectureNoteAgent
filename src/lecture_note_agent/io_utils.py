@@ -134,9 +134,53 @@ def parse_slides(
     raise ValueError(f"Unsupported slides format: {ext}. Use .pdf, .pptx, .md, or .txt")
 
 
+_SRT_TIMESTAMP = re.compile(
+    r"(\d{1,2}:\d{2}:\d{2})[,.](\d{1,3})\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}"
+)
+_SRT_INDEX = re.compile(r"^\d+$")
+
+
+def _parse_srt(text: str) -> List[TranscriptSegment]:
+    segments: list[TranscriptSegment] = []
+    seg_idx = 0
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        # Skip sequence number lines
+        if _SRT_INDEX.match(line):
+            i += 1
+            continue
+        ts_match = _SRT_TIMESTAMP.match(line)
+        if ts_match:
+            timestamp = ts_match.group(1)  # HH:MM:SS
+            i += 1
+            text_lines: list[str] = []
+            while i < len(lines) and lines[i].strip():
+                text_lines.append(lines[i].strip())
+                i += 1
+            content = " ".join(text_lines).strip()
+            if content:
+                seg_idx += 1
+                segments.append(
+                    TranscriptSegment(
+                        segment_id=f"T{seg_idx}",
+                        timestamp=timestamp,
+                        speaker="Teacher",
+                        text=content,
+                    )
+                )
+        else:
+            i += 1
+    return segments
+
+
 def parse_transcript(transcript_path: str) -> List[TranscriptSegment]:
     path = Path(transcript_path)
     text = _read_text_file(path)
+
+    if path.suffix.lower() == ".srt" or _SRT_TIMESTAMP.search(text):
+        return _parse_srt(text)
 
     lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
     segments: list[TranscriptSegment] = []
