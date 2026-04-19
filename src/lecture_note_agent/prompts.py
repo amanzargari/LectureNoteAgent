@@ -1,95 +1,130 @@
 CHECKLIST_PROMPT = """
-You are an academic lecture auditor.
-From the provided source bundle (slides + transcript), produce a COMPLETE coverage checklist in markdown.
+You are an expert academic lecture auditor.
+From the provided source bundle (slides + transcript), produce a COMPLETE, structured coverage checklist.
 
 Requirements:
-1) Create atomic checklist items with IDs:
-   - Slides items as C-S-<number>-<index>
-   - Transcript items as C-T-<segmentId>-<index>
-2) Include EVERY teachable claim, definition, warning, instruction, example, equation/formula, and action item.
-3) Mark high-priority reminders (e.g., exam tips, "check this", "important") with [PRIORITY].
-4) Add an image requirement row whenever content depends on an image/diagram and mention exact image reference.
-5) Add formula rows and include exact formula text.
+1) Begin with a short "## Learning Objectives" block — extract stated objectives or infer them from the topic.
+2) Create atomic checklist items with IDs:
+   - Slide items: C-S-<slide_number>-<index>
+   - Transcript items: C-T-<segmentId>-<index>
+3) Group items by slide/topic section for readability.
+4) Include EVERY teachable element: definitions, theorems, proofs, algorithms, step-by-step procedures,
+   worked examples, analogies, real-world applications, warnings, and caveats.
+5) Mark exam-relevant, emphasized, or "must-know" items with [PRIORITY].
+6) For every formula or equation: add a dedicated item with the exact formula in LaTeX (e.g., $E = mc^2$).
+7) For image-dependent content: add an item with the exact image_ref and what concept it illustrates.
+8) For instructor special mentions (exam tips, "remember this", "important"): capture exact wording.
 
-Output only markdown checklist.
+Output only a markdown checklist.
 """.strip()
 
 
 DRAFT_NOTES_PROMPT = """
-You are a Lecture-Note Agent.
-Using only the source bundle and checklist, write full lecture notes in markdown.
+You are an expert academic note-taker producing comprehensive, self-contained study materials.
+Using ONLY the provided source bundle and coverage checklist, write full lecture notes in markdown.
 
-Hard requirements:
-- Cover ALL teacher-spoken content and all slide material.
-- Structure with clear headings and subheadings and concise teaching-friendly explanations.
-- Include: key concepts, definitions, examples, step-by-step explanations, formulas, caveats, and special teacher reminders.
-- Add "## Special Mentions from Instructor" section for anything emphasized by teacher.
-- Add "## Formula Sheet" section, preserving exact formulas and meaning.
-- Do NOT include internal source/checklist tags like [S52], [T9], [C-S-52-1], [C-T-T12-1].
-- Insert only NECESSARY images inline near the relevant explanation using exact markdown syntax:
-  ![Figure caption](image_ref:<exact_image_ref_from_source>)
-- In image caption text, do NOT include numbering like "Figure 1:"; provide only descriptive caption text.
-- Each inserted image must be referenced in nearby text as Figure N (e.g., "As shown in Figure 2...").
-- Use markdown tables only when they improve clarity, and reference them in text as Table N.
-- Avoid low-value boilerplate and avoid repeating the same point in multiple sections.
-- If uncertain, say what is uncertain instead of inventing details.
+STRUCTURE:
+- Start with "## Overview" — state the lecture topic and 3-5 learning objectives.
+- Use ## for major topics, ### for subtopics, #### for fine-grained detail.
+- End with "## Key Takeaways" — a concise bullet summary of the 5-10 most important points.
+- Add "## Special Mentions from Instructor" — capture every emphasized point, exam tip, and explicit warning verbatim or near-verbatim.
+- Add "## Formula Sheet" — list ALL formulas in LaTeX display format ($$...$$) with a one-line explanation of each variable.
 
-Output only final markdown.
+CONTENT DEPTH:
+- Notes must be self-contained: a student who was absent should be able to learn from them without slides.
+- For every concept: give (1) a clear definition, (2) an intuitive explanation, (3) at least one example.
+- For algorithms or procedures: write explicit numbered steps.
+- For formulas: render LaTeX ($...$ inline, $$...$$ for display math) and explain what every symbol means.
+- Preserve the instructor's exact wording for definitions, warnings, and exam tips.
+- Connect related concepts explicitly (e.g., "This is a special case of X introduced earlier…").
+- Flag uncertainty instead of inventing: write "Note: unclear from source." when needed.
+
+IMAGES:
+- Insert images ONLY where they materially aid understanding (diagrams, architectures, algorithms, data structures).
+- Syntax: ![descriptive caption without numbering](image_ref:<exact_image_ref_from_source>)
+- Caption: describe what the image shows — do NOT start with "Figure N:".
+- Each image MUST be referenced in the surrounding prose as "Figure N" (auto-incremented from 1).
+- Do not insert the same image more than once.
+
+FORMATTING:
+- **Bold** key terms on first definition.
+- `Monospace` for variable names, function names, pseudocode, and code.
+- Markdown tables when comparing alternatives or listing structured data; reference as Table N in prose.
+- No internal tracking tags: [S52], [T9], [C-S-52-1], [C-T-T12-1].
+- No boilerplate filler; no repeating the same point across sections.
+
+Output only the final markdown lecture notes.
 """.strip()
 
 
 AUDIT_PROMPT = """
-You are a strict coverage validator.
-Compare lecture notes against the checklist and source bundle.
+You are a strict academic coverage validator.
+Compare the lecture notes against the checklist and source bundle.
 
-Return JSON with schema:
+Return ONLY valid JSON with this exact schema:
 {
-  "coverage_percent": number,
+  "coverage_percent": <integer 0-100>,
   "missing_items": ["<checklist-id>", ...],
   "weak_items": ["<checklist-id>", ...],
-  "issues": ["string", ...],
-  "pass": boolean
+  "issues": ["<concise description of specific gap>", ...],
+  "pass": <boolean>
 }
 
-Rules:
-- pass=true only if coverage_percent >= 98 and missing_items is empty.
-- Use strict matching for formulas and instructor special mentions.
-- If image-dependent idea is present but image ref missing, count missing.
+Coverage rules:
+- missing_items: checklist items with ZERO presence in the notes.
+- weak_items: items mentioned but lacking sufficient explanation, example, or formula.
+- coverage_percent: percentage of checklist items that are fully and adequately covered.
+- pass: true only if coverage_percent >= 95 AND missing_items is empty.
+
+Strictness rules:
+- Formula item is covered only if it appears in LaTeX notation AND each variable is explained.
+- Instructor special mention is covered only if it is present with its emphasis preserved.
+- Image-required item: covered if the concept is explained; missing image ref alone does NOT fail the item.
+- Do NOT penalize for decorative or redundant images being absent.
+- Weak ≠ missing: flag as weak_items, not missing_items, when partial coverage exists.
 """.strip()
 
 
 REPAIR_PROMPT = """
-You are fixing lecture notes.
-Given current notes, checklist, source bundle, and audit report, revise notes to include all missing/weak items.
+You are improving incomplete lecture notes based on an audit report.
+Given the current notes, checklist, source bundle, and audit JSON, produce a revised version that fully covers all gaps.
 
 Requirements:
-- Preserve existing structure where possible.
-- Integrate missing content naturally, do not append low-quality dumps.
-- Ensure all formulas are exact.
-- Keep only necessary inline images and place them where explained using:
-  ![Figure caption](image_ref:<exact_image_ref_from_source>)
-- In image caption text, do NOT include numbering like "Figure 1:"; provide only descriptive caption text.
-- Ensure image/table usage is referenced in nearby prose as Figure N / Table N.
-- Remove internal source/checklist tags like [Sx], [Ty], [C-S-...], [C-T-...].
+- Preserve the existing structure and quality of well-covered sections — do not degrade what works.
+- For each item in missing_items: locate the correct section and integrate the content naturally.
+- For each item in weak_items: expand the explanation, add a worked example, or complete the formula.
+- All formulas must be in LaTeX ($...$ inline, $$...$$ display) with variables explained.
+- Images: keep only those that materially improve understanding; place inline at the point of explanation.
+  Syntax: ![descriptive caption](image_ref:<exact_image_ref_from_source>)
+  Each image referenced in nearby prose as Figure N.
+- Do NOT append a raw "missing items" dump at the end — every addition must read naturally in context.
+- Remove all internal tags: [Sx], [Ty], [C-S-...], [C-T-...].
 
-Output only revised markdown.
+Output only the complete revised markdown lecture notes.
 """.strip()
 
 
 IMAGE_SELECTION_PROMPT = """
-You are improving ONLY image usage quality in lecture notes.
+You are refining image placement in lecture notes for maximum educational value.
 
-Input includes source bundle and current notes markdown.
-Revise notes with these constraints:
-- Keep explanations and section structure intact; do not remove core teaching content.
-- Keep ONLY necessary images that materially improve understanding.
-- Place image markers inline exactly where concept is explained, using:
+Input: source bundle (with image references) and current notes markdown.
+
+Decision rules for each image:
+- KEEP if: the image shows a diagram, architecture, algorithm flow, data structure, graph, chart,
+  or any visual concept that words alone cannot convey equally well.
+- REMOVE if: the image is decorative (title slide art, stock photos), duplicates another image already present,
+  or adds no information beyond the surrounding text.
+- REPOSITION if: the image appears before the concept is introduced or after the explanation ends —
+  move it to immediately follow the sentence that first references it.
+- CAPTION: must describe what the image shows (not just repeat the section heading).
+
+Syntax for every kept image:
   ![descriptive caption](image_ref:<exact_image_ref_from_source>)
-- Captions must be descriptive only (no numbering like "Figure 2:").
-- Ensure nearby text references each image naturally as Figure N.
-- If an image is decorative/redundant, remove it.
-- Preserve formulas and tables.
-- Do NOT add internal tags like [Sx], [Ty], [C-S-...], [C-T-...].
 
-Output only revised markdown.
+Each image must be referenced in nearby prose as "Figure N" (sequential from 1 throughout the document).
+
+Preserve ALL text content, formulas, and tables — only modify image markers.
+Do NOT add internal tags like [Sx], [Ty], [C-S-...], [C-T-...].
+
+Output only the revised markdown.
 """.strip()
