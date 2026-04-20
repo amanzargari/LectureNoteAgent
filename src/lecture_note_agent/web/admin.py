@@ -222,6 +222,61 @@ def delete_user(user_id: int):
     return redirect(url_for("admin.users"))
 
 
+@admin_bp.route("/pricing/sync", methods=["POST"])
+@admin_required
+def pricing_sync():
+    """Fetch fresh pricing from OpenRouter API and upsert into ModelPricing table."""
+    from .app import fetch_openrouter_pricing
+    gs = GlobalSettings.query.filter_by(key="api_key").first()
+    api_key = (gs.value if gs else None) or os.getenv("OPENAI_API_KEY", "") or None
+    rows = fetch_openrouter_pricing(api_key)
+    if not rows:
+        flash("Could not fetch pricing from OpenRouter API (check API key).", "danger")
+        return redirect(url_for("admin.pricing"))
+    for model_name, inp, out in rows:
+        existing = ModelPricing.query.filter_by(model_name=model_name).first()
+        if existing:
+            existing.input_per_1m = inp
+            existing.output_per_1m = out
+        else:
+            db.session.add(ModelPricing(model_name=model_name, input_per_1m=inp, output_per_1m=out))
+    db.session.commit()
+    flash(f"Synced pricing for {len(rows)} models from OpenRouter.", "success")
+    return redirect(url_for("admin.pricing"))
+
+
+def _build_provider_config_json(form) -> str:
+    """Serialize provider routing fields from a form into a JSON string (or empty string)."""
+    order_raw = form.get("provider_order", "").strip()
+    order = [p.strip() for p in order_raw.split(",") if p.strip()] if order_raw else []
+    only_raw = form.get("provider_only", "").strip()
+    only = [p.strip() for p in only_raw.split(",") if p.strip()] if only_raw else []
+    ignore_raw = form.get("provider_ignore", "").strip()
+    ignore = [p.strip() for p in ignore_raw.split(",") if p.strip()] if ignore_raw else []
+    quant_raw = form.get("provider_quantizations", "").strip()
+    quantizations = [q.strip() for q in quant_raw.split(",") if q.strip()] if quant_raw else []
+    sort_val = form.get("provider_sort", "").strip()
+    data_collection = form.get("provider_data_collection", "").strip()
+    allow_fallbacks = form.get("provider_allow_fallbacks") == "1"
+
+    routing: dict = {}
+    if order:
+        routing["order"] = order
+        routing["allow_fallbacks"] = allow_fallbacks
+    if only:
+        routing["only"] = only
+    if ignore:
+        routing["ignore"] = ignore
+    if quantizations:
+        routing["quantizations"] = quantizations
+    if sort_val:
+        routing["sort"] = sort_val
+    if data_collection:
+        routing["data_collection"] = data_collection
+
+    return json.dumps(routing) if routing else ""
+
+
 @admin_bp.route("/pricing", methods=["GET", "POST"])
 @admin_required
 def pricing():
@@ -242,18 +297,40 @@ def pricing():
             except ValueError:
                 flash("Prices must be numbers.", "danger")
                 return redirect(url_for("admin.pricing"))
+            provider_config = _build_provider_config_json(request.form)
             row = ModelPricing.query.filter_by(model_name=model_name).first()
             if row:
                 row.input_per_1m = inp
                 row.output_per_1m = out
+                row.provider_config = provider_config
             else:
-                db.session.add(ModelPricing(model_name=model_name, input_per_1m=inp, output_per_1m=out))
+                db.session.add(ModelPricing(
+                    model_name=model_name,
+                    input_per_1m=inp,
+                    output_per_1m=out,
+                    provider_config=provider_config,
+                ))
             db.session.commit()
             flash(f'Pricing for "{model_name}" saved.', "success")
+        elif action == "set_provider":
+            pid = request.form.get("id")
+            row = db.session.get(ModelPricing, int(pid))
+            if row:
+                row.provider_config = _build_provider_config_json(request.form)
+                db.session.commit()
+                flash(f'Provider routing for "{row.model_name}" saved.', "success")
         return redirect(url_for("admin.pricing"))
 
     prices = ModelPricing.query.order_by(ModelPricing.model_name).all()
-    return render_template("admin/pricing.html", prices=prices)
+    # Parse provider_config JSON for template rendering
+    prices_with_routing = []
+    for p in prices:
+        try:
+            routing = json.loads(p.provider_config) if p.provider_config else {}
+        except Exception:
+            routing = {}
+        prices_with_routing.append((p, routing))
+    return render_template("admin/pricing.html", prices=prices_with_routing)
 
 
 @admin_bp.route("/settings", methods=["GET", "POST"])

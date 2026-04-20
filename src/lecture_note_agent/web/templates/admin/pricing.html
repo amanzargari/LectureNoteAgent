@@ -4,34 +4,91 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <p class="text-muted mb-0">Prices in USD per 1M tokens. Used for cost estimation on all projects.</p>
-  <a href="{{ url_for('admin.index') }}" class="btn btn-sm btn-outline-secondary">
-    <i class="fa-solid fa-arrow-left me-1"></i>Back
-  </a>
+  <p class="text-muted mb-0">Prices in USD per 1M tokens. Set per-model OpenRouter provider routing below.</p>
+  <div class="d-flex gap-2">
+    <form method="POST" action="{{ url_for('admin.pricing_sync') }}">
+      <button type="submit" class="btn btn-sm btn-outline-info">
+        <i class="fa-solid fa-rotate me-1"></i>Sync from OpenRouter
+      </button>
+    </form>
+    <a href="{{ url_for('admin.index') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="fa-solid fa-arrow-left me-1"></i>Back
+    </a>
+  </div>
 </div>
 
 <!-- Add new pricing row -->
 <div class="card mb-4">
   <div class="card-header"><i class="fa-solid fa-plus me-2 text-success"></i>Add / Update Model Pricing</div>
   <div class="card-body">
-    <form method="POST" action="{{ url_for('admin.pricing') }}" class="row g-3 align-items-end">
+    <form method="POST" action="{{ url_for('admin.pricing') }}">
       <input type="hidden" name="action" value="add" />
-      <div class="col-md-5">
-        <label class="form-label small">Model Name</label>
-        <input type="text" name="model_name" class="form-control form-control-sm"
-               placeholder="e.g. openai/gpt-4o or anthropic/claude-3.5-sonnet" required />
+      <div class="row g-3 align-items-end mb-3">
+        <div class="col-md-4">
+          <label class="form-label small">Model Name</label>
+          <input type="text" name="model_name" class="form-control form-control-sm"
+                 placeholder="e.g. openai/gpt-4o" required />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Input ($/1M tokens)</label>
+          <input type="number" name="input_per_1m" class="form-control form-control-sm" step="0.0001" min="0" value="0" required />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Output ($/1M tokens)</label>
+          <input type="number" name="output_per_1m" class="form-control form-control-sm" step="0.0001" min="0" value="0" required />
+        </div>
       </div>
-      <div class="col-md-3">
-        <label class="form-label small">Input ($/1M tokens)</label>
-        <input type="number" name="input_per_1m" class="form-control form-control-sm" step="0.0001" min="0" value="0" required />
+      <!-- Provider routing fields -->
+      <div class="border rounded p-3 bg-light mb-3">
+        <div class="fw-semibold small mb-2"><i class="fa-solid fa-route me-1 text-primary"></i>OpenRouter Provider Routing (optional)</div>
+        <div class="row g-2">
+          <div class="col-md-4">
+            <label class="form-label small">Provider Order <span class="text-muted">(comma-separated slugs)</span></label>
+            <input type="text" name="provider_order" class="form-control form-control-sm"
+                   placeholder="e.g. DeepInfra, Together" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Only Providers <span class="text-muted">(allowlist)</span></label>
+            <input type="text" name="provider_only" class="form-control form-control-sm"
+                   placeholder="e.g. DeepInfra" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Ignore Providers <span class="text-muted">(blocklist)</span></label>
+            <input type="text" name="provider_ignore" class="form-control form-control-sm"
+                   placeholder="e.g. Together" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small">Quantizations <span class="text-muted">(comma-separated)</span></label>
+            <input type="text" name="provider_quantizations" class="form-control form-control-sm"
+                   placeholder="e.g. fp16, bf16" />
+            <div class="form-text">int4 int8 fp4 fp6 fp8 fp16 bf16 fp32</div>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small">Sort</label>
+            <select name="provider_sort" class="form-select form-select-sm">
+              <option value="">— default —</option>
+              <option value="price">price (cheapest)</option>
+              <option value="throughput">throughput (fastest)</option>
+              <option value="latency">latency (lowest)</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small">Data Collection</label>
+            <select name="provider_data_collection" class="form-select form-select-sm">
+              <option value="">— default —</option>
+              <option value="allow">allow</option>
+              <option value="deny">deny</option>
+            </select>
+          </div>
+          <div class="col-md-2 d-flex align-items-end">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="provider_allow_fallbacks" value="1" id="add_allow_fallbacks" checked />
+              <label class="form-check-label small" for="add_allow_fallbacks">Allow fallbacks</label>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="col-md-3">
-        <label class="form-label small">Output ($/1M tokens)</label>
-        <input type="number" name="output_per_1m" class="form-control form-control-sm" step="0.0001" min="0" value="0" required />
-      </div>
-      <div class="col-md-1">
-        <button type="submit" class="btn btn-success btn-sm w-100">Save</button>
-      </div>
+      <button type="submit" class="btn btn-success btn-sm">Save</button>
     </form>
   </div>
 </div>
@@ -41,27 +98,126 @@
   <div class="card-header"><i class="fa-solid fa-table me-2"></i>Current Pricing</div>
   {% if prices %}
   <div class="table-responsive">
-    <table class="table table-hover mb-0">
+    <table class="table table-hover mb-0 align-middle">
       <thead>
         <tr>
           <th>Model</th>
           <th>Input ($/1M)</th>
           <th>Output ($/1M)</th>
+          <th>Provider Routing</th>
           <th></th>
         </tr>
       </thead>
       <tbody>
-        {% for p in prices %}
+        {% for p, routing in prices %}
         <tr>
           <td class="font-monospace small">{{ p.model_name }}</td>
           <td class="text-muted small">${{ '%.4f'|format(p.input_per_1m) }}</td>
           <td class="text-muted small">${{ '%.4f'|format(p.output_per_1m) }}</td>
+          <td class="small">
+            {% if routing %}
+              {% if routing.get('order') %}
+                <span class="badge bg-primary me-1">{{ routing.order | join(', ') }}</span>
+              {% endif %}
+              {% if routing.get('only') %}
+                <span class="badge bg-success me-1">only: {{ routing.only | join(', ') }}</span>
+              {% endif %}
+              {% if routing.get('ignore') %}
+                <span class="badge bg-warning text-dark me-1">ignore: {{ routing.ignore | join(', ') }}</span>
+              {% endif %}
+              {% if routing.get('quantizations') %}
+                <span class="badge bg-secondary me-1">{{ routing.quantizations | join(', ') }}</span>
+              {% endif %}
+              {% if routing.get('sort') %}
+                <span class="badge bg-info text-dark me-1">sort: {{ routing.sort }}</span>
+              {% endif %}
+              {% if routing.get('allow_fallbacks') == false %}
+                <span class="badge bg-danger me-1">no fallbacks</span>
+              {% endif %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+            <button class="btn btn-xs btn-outline-secondary ms-1" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#provider-form-{{ p.id }}"
+                    aria-expanded="false" title="Edit provider routing">
+              <i class="fa-solid fa-sliders fa-xs"></i>
+            </button>
+          </td>
           <td>
             <form method="POST" action="{{ url_for('admin.pricing') }}"
                   onsubmit="return confirm('Delete pricing for {{ p.model_name }}?')" class="d-inline">
               <input type="hidden" name="action" value="delete" />
               <input type="hidden" name="id" value="{{ p.id }}" />
               <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fa-solid fa-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        <!-- Collapsible provider routing edit row -->
+        <tr class="collapse" id="provider-form-{{ p.id }}">
+          <td colspan="5" class="bg-light p-3">
+            <form method="POST" action="{{ url_for('admin.pricing') }}">
+              <input type="hidden" name="action" value="set_provider" />
+              <input type="hidden" name="id" value="{{ p.id }}" />
+              <div class="fw-semibold small mb-2 text-primary">
+                <i class="fa-solid fa-route me-1"></i>Provider Routing for <code>{{ p.model_name }}</code>
+              </div>
+              <div class="row g-2 mb-2">
+                <div class="col-md-4">
+                  <label class="form-label small">Provider Order <span class="text-muted">(comma-separated)</span></label>
+                  <input type="text" name="provider_order" class="form-control form-control-sm"
+                         value="{{ routing.get('order', []) | join(', ') }}"
+                         placeholder="e.g. DeepInfra, Together" />
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small">Only Providers</label>
+                  <input type="text" name="provider_only" class="form-control form-control-sm"
+                         value="{{ routing.get('only', []) | join(', ') }}"
+                         placeholder="e.g. DeepInfra" />
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small">Ignore Providers</label>
+                  <input type="text" name="provider_ignore" class="form-control form-control-sm"
+                         value="{{ routing.get('ignore', []) | join(', ') }}"
+                         placeholder="e.g. Together" />
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small">Quantizations</label>
+                  <input type="text" name="provider_quantizations" class="form-control form-control-sm"
+                         value="{{ routing.get('quantizations', []) | join(', ') }}"
+                         placeholder="e.g. fp16, bf16" />
+                  <div class="form-text">int4 int8 fp4 fp6 fp8 fp16 bf16 fp32</div>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small">Sort</label>
+                  <select name="provider_sort" class="form-select form-select-sm">
+                    <option value="" {% if not routing.get('sort') %}selected{% endif %}>— default —</option>
+                    <option value="price" {% if routing.get('sort') == 'price' %}selected{% endif %}>price</option>
+                    <option value="throughput" {% if routing.get('sort') == 'throughput' %}selected{% endif %}>throughput</option>
+                    <option value="latency" {% if routing.get('sort') == 'latency' %}selected{% endif %}>latency</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small">Data Collection</label>
+                  <select name="provider_data_collection" class="form-select form-select-sm">
+                    <option value="" {% if not routing.get('data_collection') %}selected{% endif %}>— default —</option>
+                    <option value="allow" {% if routing.get('data_collection') == 'allow' %}selected{% endif %}>allow</option>
+                    <option value="deny" {% if routing.get('data_collection') == 'deny' %}selected{% endif %}>deny</option>
+                  </select>
+                </div>
+                <div class="col-md-2 d-flex align-items-end pb-1">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="provider_allow_fallbacks" value="1"
+                           id="allow_fb_{{ p.id }}"
+                           {% if routing.get('allow_fallbacks', True) %}checked{% endif %} />
+                    <label class="form-check-label small" for="allow_fb_{{ p.id }}">Allow fallbacks</label>
+                  </div>
+                </div>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary">Save Routing</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        data-bs-toggle="collapse" data-bs-target="#provider-form-{{ p.id }}">Cancel</button>
+              </div>
             </form>
           </td>
         </tr>

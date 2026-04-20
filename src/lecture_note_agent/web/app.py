@@ -1,12 +1,47 @@
 from __future__ import annotations
 
+import json
 import os
-from pathlib import Path
+import urllib.error
+import urllib.request
 
 from flask import Flask
 from flask_login import LoginManager
 
-from .database import DEFAULT_MODEL_PRICES, GlobalSettings, ModelPricing, User, UserSettings, db
+from .database import GlobalSettings, ModelPricing, User, UserSettings, db
+
+
+def _parse_openrouter_models(data: dict) -> list[tuple[str, float, float]]:
+    """Return [(model_id, input_per_1m_usd, output_per_1m_usd)] from OpenRouter response."""
+    results = []
+    for m in data.get("data", []):
+        mid = m.get("id", "")
+        pricing = m.get("pricing") or {}
+        try:
+            inp = float(pricing.get("prompt") or 0) * 1_000_000
+            out = float(pricing.get("completion") or 0) * 1_000_000
+        except (TypeError, ValueError):
+            continue
+        if mid:
+            results.append((mid, inp, out))
+    return results
+
+
+def fetch_openrouter_pricing(api_key: str | None = None) -> list[tuple[str, float, float]]:
+    """Fetch model pricing from OpenRouter API. Returns [] if unavailable."""
+    key = api_key or os.getenv("OPENAI_API_KEY", "")
+    if not key:
+        return []
+    try:
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/models",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        return _parse_openrouter_models(data)
+    except Exception:
+        return []
 
 _ADMIN_USERNAME = "admin"
 _ADMIN_PASSWORD = "Admin@LectureAI2024"
@@ -118,6 +153,10 @@ def _migrate_db() -> None:
         if not _has_col("projects", col):
             cur.execute(f"ALTER TABLE projects ADD COLUMN {col} {typedef}")
 
+    # model_pricing columns
+    if not _has_col("model_pricing", "provider_config"):
+        cur.execute("ALTER TABLE model_pricing ADD COLUMN provider_config TEXT DEFAULT ''")
+
     # user_settings columns
     user_settings_cols = [
         ("model_image_selection",          "VARCHAR(128)"),
@@ -135,10 +174,19 @@ def _migrate_db() -> None:
 
 
 def _seed_model_pricing() -> None:
-    for model_name, (inp, out) in DEFAULT_MODEL_PRICES.items():
-        if not ModelPricing.query.filter_by(model_name=model_name).first():
+    """Populate ModelPricing from OpenRouter API on startup. No-op if API key is unavailable."""
+    gs = GlobalSettings.query.filter_by(key="api_key").first()
+    api_key = (gs.value if gs else None) or os.getenv("OPENAI_API_KEY", "") or None
+    rows = fetch_openrouter_pricing(api_key)
+    for model_name, inp, out in rows:
+        existing = ModelPricing.query.filter_by(model_name=model_name).first()
+        if existing:
+            existing.input_per_1m = inp
+            existing.output_per_1m = out
+        else:
             db.session.add(ModelPricing(model_name=model_name, input_per_1m=inp, output_per_1m=out))
-    db.session.commit()
+    if rows:
+        db.session.commit()
 
 
 def run() -> None:

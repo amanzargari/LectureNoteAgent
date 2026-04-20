@@ -8,6 +8,19 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+
+def _provider_extra_body(provider_config_json: str | None) -> dict | None:
+    """Build OpenRouter extra_body from a JSON provider routing config string, or None."""
+    if not provider_config_json:
+        return None
+    try:
+        routing = json.loads(provider_config_json)
+        if routing and isinstance(routing, dict):
+            return {"provider": routing}
+    except Exception:
+        pass
+    return None
+
 from pypdf import PdfReader, PdfWriter
 
 from .config import AgentConfig, ensure_api_key
@@ -32,6 +45,7 @@ class LectureNoteAgent:
         openai_module = importlib.import_module("openai")
         OpenAI = getattr(openai_module, "OpenAI")
         self.client = OpenAI(api_key=self.config.api_key, base_url=self.config.base_url)
+        self._model_providers: dict[str, str] = dict(self.config.model_providers or {})
         self._model_calls = 0
         self._prompt_tokens = 0
         self._completion_tokens = 0
@@ -114,6 +128,7 @@ class LectureNoteAgent:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt[: self.config.max_input_chars]},
         ]
+        extra = _provider_extra_body(self._model_providers.get(resolved_model, ""))
 
         if on_token is not None:
             try:
@@ -126,6 +141,7 @@ class LectureNoteAgent:
                     timeout=timeout_seconds,
                     stream=True,
                     messages=msgs,
+                    **({"extra_body": extra} if extra else {}),
                 ) as stream:
                     for chunk in stream:
                         choice = chunk.choices[0] if chunk.choices else None
@@ -148,6 +164,7 @@ class LectureNoteAgent:
             max_tokens=self.config.max_output_tokens,
             timeout=timeout_seconds,
             messages=msgs,
+            **({"extra_body": extra} if extra else {}),
         )
         self._accumulate_usage(getattr(response, "usage", None), model=resolved_model)
         choice = response.choices[0]
@@ -242,6 +259,7 @@ class LectureNoteAgent:
             self._model_calls += 1
             resolved_model = (model or self.config.model_ocr or self.config.model).strip()
             timeout_seconds = max(1, int(getattr(self.config, "request_timeout_seconds", 180) or 180))
+            extra = _provider_extra_body(self._model_providers.get(resolved_model, ""))
             response = self.client.responses.create(
                 model=resolved_model,
                 max_output_tokens=self.config.max_output_tokens,
@@ -255,6 +273,7 @@ class LectureNoteAgent:
                         ],
                     }
                 ],
+                **({"extra_body": extra} if extra else {}),
             )
             self._accumulate_usage(getattr(response, "usage", None), model=resolved_model)
             return self._extract_response_text(response)

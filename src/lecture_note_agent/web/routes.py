@@ -64,6 +64,14 @@ def _build_agent_config(user):
 
     slide_weight = float(s.slide_weight) if s and s.slide_weight is not None else 0.6
 
+    model_providers = {
+        row.model_name: row.provider_config
+        for row in ModelPricing.query.filter(
+            ModelPricing.provider_config != None,
+            ModelPricing.provider_config != "",
+        ).all()
+    }
+
     return AgentConfig(
         api_key=api_key,
         base_url=base_url,
@@ -83,6 +91,7 @@ def _build_agent_config(user):
         ),
         pdf_ocr_mode=s.ocr_mode if s and s.ocr_mode else "auto",
         slide_weight=slide_weight,
+        model_providers=model_providers,
     )
 
 

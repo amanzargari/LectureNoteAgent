@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
 
@@ -41,6 +41,8 @@ class AgentConfig:
     pdf_ocr_mode: str = os.getenv("PDF_OCR_MODE", "auto")
     # 0.0 = weight transcript fully, 1.0 = weight slides fully (default 0.6)
     slide_weight: float = float(os.getenv("SLIDE_WEIGHT", "0.6"))
+    # {model_id: provider_config_json} for OpenRouter provider routing, injected from DB
+    model_providers: dict = field(default_factory=dict)
 
 
 def ensure_api_key(config: AgentConfig) -> None:
