@@ -198,6 +198,34 @@ def _has_meaningful_text(text: str, min_alnum: int = 30) -> bool:
 def has_meaningful_text(text: str, min_alnum: int = 30) -> bool:
     return _has_meaningful_text(text, min_alnum=min_alnum)
 
+def _clean_diagram_label_noise(text: str) -> str:
+    """
+    Detect pages that look like diagram-label dumps (many very short lines)
+    and collapse the labels into a single annotated line so they don't end up
+    as separate paragraphs in the final notes.
+    """
+    if not text or not text.strip():
+        return text
+
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 4:
+        return text  # too short to be a label dump, leave alone
+
+    short_lines = [ln for ln in lines if len(ln.split()) <= 3]
+    short_ratio = len(short_lines) / len(lines)
+
+    # If >60% of non-empty lines are 1-3 words, treat as diagram labels
+    if short_ratio > 0.6:
+        long_lines = [ln for ln in lines if len(ln.split()) > 3]
+        label_blob = "; ".join(short_lines)
+        prose_part = "\n".join(long_lines)
+
+        if prose_part:
+            return f"{prose_part}\n\n[Diagram labels on this slide: {label_blob}]"
+        else:
+            return f"[Diagram labels on this slide: {label_blob}]"
+
+    return text
 
 def parse_slides(
     slides_path: str,
@@ -229,6 +257,7 @@ def parse_slides(
         slides = []
         for i, page in enumerate(reader.pages, 1):
             page_text = (page.extract_text() or "").strip()
+            page_text = _clean_diagram_label_noise(page_text)
             full_text = page_text
             selected_images = _select_pdf_images_for_page(page, i)
             image_refs = [image_ref for _, image_ref, _ in selected_images]
@@ -356,17 +385,87 @@ def parse_transcript(transcript_path: str) -> List[TranscriptSegment]:
 
     return segments
 
+def _collapse_build_sequences(slides: List[SlideUnit]) -> List[dict]:
+    """
+    Group adjacent slides where slide N+1's text is a near-superset of slide N's.
+    Used to detect progressive-reveal slides (instructor adds one bullet at a time).
+
+    Returns a list of groups, each with:
+      - slide_numbers: list of original slide numbers in the group
+      - title:         title of the final (richest) slide in the group
+      - text:          text of the final slide (the complete version)
+      - image_refs:    union of image_refs across the group
+      - is_build:      True if 2+ slides were merged
+    """
+    def norm(t: str) -> str:
+        return re.sub(r"\s+", " ", (t or "")).strip().lower()
+
+    groups: list[dict] = []
+    i = 0
+    while i < len(slides):
+        current = slides[i]
+        group = {
+            "slide_numbers": [current.slide_number],
+            "title": current.title,
+            "text": current.text,
+            "image_refs": list(current.image_refs),
+            "is_build": False,
+        }
+
+        j = i + 1
+        while j < len(slides):
+            prev_norm = norm(group["text"])
+            curr_norm = norm(slides[j].text)
+
+            if not prev_norm or not curr_norm:
+                break
+
+            # Superset test: current slide contains ~all of previous slide's text
+            # and is not dramatically longer (which would indicate a different topic).
+            is_superset = prev_norm in curr_norm
+            length_ratio = len(curr_norm) / max(1, len(prev_norm))
+            reasonable_growth = 1.0 <= length_ratio <= 3.0
+
+            if is_superset and reasonable_growth:
+                group["slide_numbers"].append(slides[j].slide_number)
+                group["title"] = slides[j].title or group["title"]
+                group["text"] = slides[j].text  # keep the richest version
+                for ref in slides[j].image_refs:
+                    if ref not in group["image_refs"]:
+                        group["image_refs"].append(ref)
+                group["is_build"] = True
+                j += 1
+            else:
+                break
+
+        groups.append(group)
+        i = j if j > i + 1 else i + 1
+
+    return groups
 
 def build_source_payload(course_name: str, slides: List[SlideUnit], transcript: List[TranscriptSegment]) -> str:
+    groups = _collapse_build_sequences(slides)
+
     slide_blocks: list[str] = []
-    for s in slides:
-        img_line = ", ".join(s.image_refs) if s.image_refs else "None"
-        formula_line = ", ".join(s.formula_candidates) if s.formula_candidates else "None"
+    for g in groups:
+        ids = ",".join(f"S{n}" for n in g["slide_numbers"])
+        header = f"[{ids}] Title: {g['title']}"
+        if g["is_build"]:
+            header += (
+                f"  (BUILD SEQUENCE: {len(g['slide_numbers'])} progressive reveals of the same topic — "
+                f"treat as ONE section, use only the final/richest version below)"
+            )
+
+        img_line = ", ".join(g["image_refs"]) if g["image_refs"] else "None"
+        # Re-extract formulas from the merged (final) text
+        formulas = _extract_formula_candidates(g["text"])
+        formula_line = ", ".join(formulas) if formulas else "None"
+
         slide_blocks.append(
             "\n".join(
                 [
-                    f"[S{s.slide_number}] Title: {s.title}",
-                    f"Text: {s.text[:3000]}",
+                    header,
+                    f"Text: {g['text'][:3000]}",
                     f"ImageRefs: {img_line}",
                     f"FormulaCandidates: {formula_line}",
                 ]
@@ -380,8 +479,11 @@ def build_source_payload(course_name: str, slides: List[SlideUnit], transcript: 
 
     payload = (
         f"Course: {course_name}\n\n"
-        f"## Slides ({len(slides)})\n" + "\n\n".join(slide_blocks) + "\n\n"
-        f"## Transcript Segments ({len(transcript)})\n" + "\n".join(transcript_blocks)
+        f"## Slides ({len(groups)} topic groups from {len(slides)} raw slides)\n"
+        + "\n\n".join(slide_blocks)
+        + "\n\n"
+        f"## Transcript Segments ({len(transcript)})\n"
+        + "\n".join(transcript_blocks)
     )
     return payload
 

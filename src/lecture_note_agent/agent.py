@@ -406,7 +406,7 @@ class LectureNoteAgent:
         text = notes_md or ""
 
         # Remove internal source/checklist tags that are useful for auditing but noisy for users.
-        text = re.sub(r"\[(?:S\d+|T\d+|C-[ST]-[^\]]+)\]", "", text)
+        text = re.sub(r"\[(?:S\d+(?:,S\d+)*|T\d+|C-[A-Z]+-[^\]]+)\]", "", text)
 
         # Remove old placeholder section if model still emits it.
         text = re.sub(
@@ -418,6 +418,20 @@ class LectureNoteAgent:
         # Cleanup whitespace artifacts after tag removals.
         text = re.sub(r"[ \t]{2,}", " ", text)
         text = re.sub(r"\n{3,}", "\n\n", text)
+
+        # Guarantee the three required closing sections exist.
+        required_sections = [
+            ("## Special Mentions from Instructor", "No special mentions in this lecture."),
+            ("## Formula Sheet", "No formulas in this lecture."),
+        ]
+        for heading, fallback in required_sections:
+            if heading not in text:
+                text = text.rstrip() + f"\n\n{heading}\n\n{fallback}\n"
+
+        # Key Takeaways: only add the heading, let repair pass fill it
+        if "## Key Takeaways" not in text:
+            text = text.rstrip() + "\n\n## Key Takeaways\n\n(_missing — repair pass should fill this_)\n"
+
         return text.strip()
 
     def run(
