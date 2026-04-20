@@ -99,7 +99,6 @@ def _seed_admin_and_globals() -> None:
         db.session.add(UserSettings(user_id=admin.id))
 
         _global_defaults = {
-            "api_key": os.getenv("OPENAI_API_KEY", ""),
             "api_base_url": os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             "model_fallback": os.getenv("OPENAI_MODEL", ""),
             "model_ocr": os.getenv("OPENAI_MODEL_OCR", ""),
@@ -175,9 +174,7 @@ def _migrate_db() -> None:
 
 def _seed_model_pricing() -> None:
     """Populate ModelPricing from OpenRouter API on startup. No-op if API key is unavailable."""
-    gs = GlobalSettings.query.filter_by(key="api_key").first()
-    api_key = (gs.value if gs else None) or os.getenv("OPENAI_API_KEY", "") or None
-    rows = fetch_openrouter_pricing(api_key)
+    rows = fetch_openrouter_pricing(os.getenv("OPENAI_API_KEY") or None)
     for model_name, inp, out in rows:
         existing = ModelPricing.query.filter_by(model_name=model_name).first()
         if existing:

@@ -34,7 +34,6 @@ class UserSettings(db.Model):
     __tablename__ = "user_settings"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
-    api_key = db.Column(db.String(512))
     api_base_url = db.Column(db.String(256))
     model_fallback = db.Column(db.String(128))
     model_ocr = db.Column(db.String(128))

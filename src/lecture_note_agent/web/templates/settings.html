@@ -20,8 +20,7 @@
       <div class="card mb-4">
         <div class="card-header"><i class="fa-solid fa-key me-2 text-warning"></i>API Credentials</div>
         <div class="card-body">
-          <p class="text-muted small">Leave blank to use the global defaults set by your admin.</p>
-          {{ field('API Key', 'api_key', settings.api_key, 'sk-…', type='password') }}
+          <p class="text-muted small">The API key is set via <code>OPENAI_API_KEY</code> in <code>.env</code>. You can override the base URL below.</p>
           {{ field('Base URL', 'api_base_url', settings.api_base_url,
                    globals.get('api_base_url','https://api.openai.com/v1'),
                    'OpenAI-compatible endpoint (supports OpenRouter, etc.)') }}

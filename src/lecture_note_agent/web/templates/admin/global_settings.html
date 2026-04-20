@@ -10,12 +10,7 @@
       <div class="card mb-4">
         <div class="card-header"><i class="fa-solid fa-key me-2 text-warning"></i>API Credentials</div>
         <div class="card-body">
-          <p class="text-muted small">These are used by all users who have not set their own API key.</p>
-          <div class="mb-3">
-            <label class="form-label">API Key</label>
-            <input type="password" name="api_key" class="form-control"
-                   value="{{ settings.get('api_key','') }}" placeholder="sk-…" autocomplete="off" />
-          </div>
+          <p class="text-muted small">The API key is configured via the <code>OPENAI_API_KEY</code> environment variable in <code>.env</code>.</p>
           <div class="mb-3">
             <label class="form-label">Base URL</label>
             <input type="text" name="api_base_url" class="form-control"

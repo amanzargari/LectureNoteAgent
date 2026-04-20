@@ -79,12 +79,7 @@ def user_projects(user_id: int):
 @admin_required
 def openrouter_credit():
     """Fetch OpenRouter account credit/balance and return as JSON."""
-    api_key = None
-    gs = GlobalSettings.query.filter_by(key="api_key").first()
-    if gs and gs.value:
-        api_key = gs.value
-    if not api_key:
-        api_key = os.getenv("OPENAI_API_KEY", "")
+    api_key = os.getenv("OPENAI_API_KEY", "")
 
     if not api_key:
         return jsonify({"error": "No API key configured"}), 400
@@ -227,8 +222,7 @@ def delete_user(user_id: int):
 def pricing_sync():
     """Fetch fresh pricing from OpenRouter API and upsert into ModelPricing table."""
     from .app import fetch_openrouter_pricing
-    gs = GlobalSettings.query.filter_by(key="api_key").first()
-    api_key = (gs.value if gs else None) or os.getenv("OPENAI_API_KEY", "") or None
+    api_key = os.getenv("OPENAI_API_KEY") or None
     rows = fetch_openrouter_pricing(api_key)
     if not rows:
         flash("Could not fetch pricing from OpenRouter API (check API key).", "danger")
@@ -337,7 +331,7 @@ def pricing():
 @admin_required
 def global_settings():
     keys = [
-        "api_key", "api_base_url",
+        "api_base_url",
         "model_fallback", "model_ocr", "model_checklist",
         "model_draft", "model_audit", "model_repair", "model_image_selection",
         "max_repair_loops", "max_model_calls", "max_output_tokens",

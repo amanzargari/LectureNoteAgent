@@ -53,7 +53,7 @@ def _build_agent_config(user):
         return os.getenv(env_var, "") if env_var else ""
 
     fallback = pick("model_fallback", "model_fallback", "OPENAI_MODEL")
-    api_key = pick("api_key", "api_key", "OPENAI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY", "")
     base_url = pick("api_base_url", "api_base_url", "OPENAI_BASE_URL") or "https://api.openai.com/v1"
 
     def _int(user_attr: str, global_key: str, default: int) -> int:
@@ -403,7 +403,6 @@ def settings():
         db.session.commit()
 
     if request.method == "POST":
-        s.api_key = request.form.get("api_key", "").strip() or None
         s.api_base_url = request.form.get("api_base_url", "").strip() or None
         s.model_fallback = request.form.get("model_fallback", "").strip() or None
         s.model_ocr = request.form.get("model_ocr", "").strip() or None
