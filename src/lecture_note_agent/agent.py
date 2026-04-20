@@ -478,6 +478,7 @@ class LectureNoteAgent:
         output_path: str,
         artifacts_dir: str | None = None,
         progress_callback: Callable[[dict], None] | None = None,
+        user_instruction: str = "",
     ) -> GenerationArtifacts:
         fast_mode = bool(getattr(self.config, "fast_mode", False))
         allow_continuation = not fast_mode
@@ -528,6 +529,8 @@ class LectureNoteAgent:
             f"## Checklist\n{checklist_md}\n\n"
             f"## Source Bundle\n{source_payload}\n"
         )
+        if user_instruction:
+            draft_input = f"## User Instructions\n{user_instruction}\n\n" + draft_input
         def _token_cb(stage_name: str) -> Callable[[str], None] | None:
             if progress_callback is None:
                 return None

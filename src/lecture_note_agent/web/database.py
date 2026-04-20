@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import uuid
+
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -55,8 +57,10 @@ class UserSettings(db.Model):
 class Project(db.Model):
     __tablename__ = "projects"
     id = db.Column(db.Integer, primary_key=True)
+    uuid = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     course_name = db.Column(db.String(256), nullable=False)
+    user_instruction = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     status = db.Column(db.String(32), default="pending")
     progress_stage = db.Column(db.String(64))

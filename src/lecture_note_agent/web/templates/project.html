@@ -12,21 +12,30 @@
       {% if project.status == 'completed' %}<i class="fa-solid fa-check me-1"></i>Completed
       {% elif project.status == 'running' %}<i class="fa-solid fa-spinner fa-spin me-1"></i>Running
       {% elif project.status == 'failed' %}<i class="fa-solid fa-xmark me-1"></i>Failed
+      {% elif project.status == 'cancelled' %}<i class="fa-solid fa-ban me-1"></i>Cancelled
       {% else %}<i class="fa-solid fa-clock me-1"></i>Pending{% endif %}
     </span>
   </div>
   <div class="d-flex gap-2">
     {% if project.status == 'completed' and project.docx_path %}
-    <a href="{{ url_for('main.project_download', project_id=project.id) }}" class="btn btn-success">
+    <a href="{{ url_for('main.project_download', project_uuid=project.uuid) }}" class="btn btn-success">
       <i class="fa-solid fa-file-word me-2"></i>Download DOCX
     </a>
     {% endif %}
     {% if project.status == 'completed' and project.pdf_path %}
-    <a href="{{ url_for('main.project_download_pdf', project_id=project.id) }}" class="btn btn-danger">
+    <a href="{{ url_for('main.project_download_pdf', project_uuid=project.uuid) }}" class="btn btn-danger">
       <i class="fa-solid fa-file-pdf me-2"></i>Download PDF
     </a>
     {% endif %}
-    <form method="POST" action="{{ url_for('main.project_delete', project_id=project.id) }}"
+    {% if project.status == 'running' %}
+    <form method="POST" action="{{ url_for('main.project_cancel', project_uuid=project.uuid) }}"
+          onsubmit="return confirm('Cancel this project? Token usage so far will still be counted.')">
+      <button type="submit" class="btn btn-warning">
+        <i class="fa-solid fa-stop me-1"></i>Cancel
+      </button>
+    </form>
+    {% endif %}
+    <form method="POST" action="{{ url_for('main.project_delete', project_uuid=project.uuid) }}"
           onsubmit="return confirm('Delete this project?')">
       <button type="submit" class="btn btn-outline-danger" {% if project.status == 'running' %}disabled{% endif %}>
         <i class="fa-solid fa-trash"></i>
@@ -53,8 +62,7 @@
 </div>
 
 <script>
-const PROJECT_ID = {{ project.id }};
-const STATUS_URL = "{{ url_for('main.project_status', project_id=project.id) }}";
+const STATUS_URL = "{{ url_for('main.project_status', project_uuid=project.uuid) }}";
 let pollInterval;
 
 const STAGE_LABELS = {
@@ -81,7 +89,7 @@ function poll() {
       document.getElementById('progressStage').textContent = STAGE_LABELS[data.stage] || data.stage || 'Running…';
       document.getElementById('progressMsg').textContent = data.message || '';
 
-      if (data.status === 'completed' || data.status === 'failed') {
+      if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
         clearInterval(pollInterval);
         location.reload();
       }
@@ -102,8 +110,16 @@ poll();
 </div>
 {% endif %}
 
-<!-- Completed results -->
-{% if project.status == 'completed' %}
+<!-- Cancelled section -->
+{% if project.status == 'cancelled' %}
+<div class="alert alert-warning">
+  <h6><i class="fa-solid fa-ban me-2"></i>Generation Cancelled</h6>
+  <p class="mb-0 small">The process was cancelled. Token usage and cost up to the cancellation point are recorded below.</p>
+</div>
+{% endif %}
+
+<!-- Completed or cancelled stats/results -->
+{% if project.status in ['completed', 'cancelled'] %}
 <!-- Stats row -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-2">

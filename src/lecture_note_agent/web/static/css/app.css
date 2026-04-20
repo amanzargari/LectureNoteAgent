@@ -218,6 +218,7 @@ body {
 .status-running   { background: rgba(99,102,241,.15); color: #818cf8; }
 .status-failed    { background: rgba(239,68,68,.15);  color: #f87171; }
 .status-pending   { background: rgba(107,114,128,.15); color: #9ca3af; }
+.status-cancelled { background: rgba(234,179,8,.15);   color: #facc15; }
 
 /* ── Project cards ─────────────────────────────────────── */
 .project-card { transition: border-color 0.15s; }

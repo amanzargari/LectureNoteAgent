@@ -39,29 +39,29 @@
         </div>
       </div>
       <!-- Provider routing fields -->
-      <div class="border rounded p-3 bg-light mb-3">
+      <div class="border rounded p-3 mb-3">
         <div class="fw-semibold small mb-2"><i class="fa-solid fa-route me-1 text-primary"></i>OpenRouter Provider Routing (optional)</div>
         <div class="row g-2">
           <div class="col-md-4">
-            <label class="form-label small">Provider Order <span class="text-muted">(comma-separated slugs)</span></label>
+            <label class="form-label small">Provider Order <span class="opacity-75">(comma-separated slugs)</span></label>
             <input type="text" name="provider_order" class="form-control form-control-sm"
                    placeholder="e.g. DeepInfra, Together" />
           </div>
           <div class="col-md-4">
-            <label class="form-label small">Only Providers <span class="text-muted">(allowlist)</span></label>
+            <label class="form-label small">Only Providers <span class="opacity-75">(allowlist)</span></label>
             <input type="text" name="provider_only" class="form-control form-control-sm"
                    placeholder="e.g. DeepInfra" />
           </div>
           <div class="col-md-4">
-            <label class="form-label small">Ignore Providers <span class="text-muted">(blocklist)</span></label>
+            <label class="form-label small">Ignore Providers <span class="opacity-75">(blocklist)</span></label>
             <input type="text" name="provider_ignore" class="form-control form-control-sm"
                    placeholder="e.g. Together" />
           </div>
           <div class="col-md-4">
-            <label class="form-label small">Quantizations <span class="text-muted">(comma-separated)</span></label>
+            <label class="form-label small">Quantizations <span class="opacity-75">(comma-separated)</span></label>
             <input type="text" name="provider_quantizations" class="form-control form-control-sm"
                    placeholder="e.g. fp16, bf16" />
-            <div class="form-text">int4 int8 fp4 fp6 fp8 fp16 bf16 fp32</div>
+            <div class="form-text opacity-75">int4 int8 fp4 fp6 fp8 fp16 bf16 fp32</div>
           </div>
           <div class="col-md-3">
             <label class="form-label small">Sort</label>
@@ -154,7 +154,7 @@
         </tr>
         <!-- Collapsible provider routing edit row -->
         <tr class="collapse" id="provider-form-{{ p.id }}">
-          <td colspan="5" class="bg-light p-3">
+          <td colspan="5" class="p-3">
             <form method="POST" action="{{ url_for('admin.pricing') }}">
               <input type="hidden" name="action" value="set_provider" />
               <input type="hidden" name="id" value="{{ p.id }}" />
@@ -163,7 +163,7 @@
               </div>
               <div class="row g-2 mb-2">
                 <div class="col-md-4">
-                  <label class="form-label small">Provider Order <span class="text-muted">(comma-separated)</span></label>
+                  <label class="form-label small">Provider Order <span class="opacity-75">(comma-separated)</span></label>
                   <input type="text" name="provider_order" class="form-control form-control-sm"
                          value="{{ routing.get('order', []) | join(', ') }}"
                          placeholder="e.g. DeepInfra, Together" />
@@ -185,7 +185,7 @@
                   <input type="text" name="provider_quantizations" class="form-control form-control-sm"
                          value="{{ routing.get('quantizations', []) | join(', ') }}"
                          placeholder="e.g. fp16, bf16" />
-                  <div class="form-text">int4 int8 fp4 fp6 fp8 fp16 bf16 fp32</div>
+                  <div class="form-text opacity-75">int4 int8 fp4 fp6 fp8 fp16 bf16 fp32</div>
                 </div>
                 <div class="col-md-3">
                   <label class="form-label small">Sort</label>

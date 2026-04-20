@@ -96,7 +96,7 @@
         {% for p in recent %}
         <tr>
           <td>
-            <a href="{{ url_for('main.project', project_id=p.id) }}" class="text-decoration-none">
+            <a href="{{ url_for('main.project', project_uuid=p.uuid) }}" class="text-decoration-none">
               {{ p.course_name }}
             </a>
           </td>

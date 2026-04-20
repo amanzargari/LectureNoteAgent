@@ -29,6 +29,14 @@ main_bp = Blueprint("main", __name__)
 _progress: dict[int, dict] = {}
 _progress_lock = threading.Lock()
 
+# Projects requested to cancel: set of project db IDs
+_cancel_requested: set[int] = set()
+_cancel_lock = threading.Lock()
+
+
+class ProjectCancelledError(Exception):
+    pass
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -107,15 +115,19 @@ def _calculate_cost(model_usage: dict) -> float:
 
 
 def _run_project_bg(app, project_id: int, slides_path: str, transcript_path: str,
-                    output_path: str, artifacts_dir: str, config) -> None:
+                    output_path: str, artifacts_dir: str, config, user_instruction: str = "") -> None:
     with app.app_context():
         start = time.time()
+        agent = None
         try:
             from ..agent import LectureNoteAgent
 
             agent = LectureNoteAgent(config=config)
 
             def on_progress(data: dict) -> None:
+                with _cancel_lock:
+                    if project_id in _cancel_requested:
+                        raise ProjectCancelledError("Cancelled by user")
                 pct = data["current"] / max(1, data["total"]) * 100
                 with _progress_lock:
                     _progress[project_id] = {
@@ -141,6 +153,7 @@ def _run_project_bg(app, project_id: int, slides_path: str, transcript_path: str
                 output_path=output_path,
                 artifacts_dir=artifacts_dir,
                 progress_callback=on_progress,
+                user_instruction=user_instruction,
             )
 
             elapsed = time.time() - start
@@ -175,6 +188,20 @@ def _run_project_bg(app, project_id: int, slides_path: str, transcript_path: str
 
                 db.session.commit()
 
+        except ProjectCancelledError:
+            elapsed = time.time() - start
+            row = db.session.get(Project, project_id)
+            if row:
+                row.status = "cancelled"
+                row.elapsed_seconds = elapsed
+                if agent is not None:
+                    row.token_prompt = agent._prompt_tokens
+                    row.token_completion = agent._completion_tokens
+                    row.token_total = agent._total_tokens
+                    row.model_calls = agent._model_calls
+                    row.model_usage_json = json.dumps(agent._model_usage)
+                    row.cost_usd = _calculate_cost(agent._model_usage)
+                db.session.commit()
         except Exception as exc:
             elapsed = time.time() - start
             row = db.session.get(Project, project_id)
@@ -186,6 +213,8 @@ def _run_project_bg(app, project_id: int, slides_path: str, transcript_path: str
         finally:
             with _progress_lock:
                 _progress.pop(project_id, None)
+            with _cancel_lock:
+                _cancel_requested.discard(project_id)
 
 
 # ---------------------------------------------------------------------------
@@ -225,8 +254,10 @@ def new_project():
             return redirect(url_for("main.new_project"))
 
         transcript_file = request.files.get("transcript")
+        user_instruction = request.form.get("user_instruction", "").strip()
 
-        project = Project(user_id=current_user.id, course_name=course_name, status="pending")
+        project = Project(user_id=current_user.id, course_name=course_name, status="pending",
+                          user_instruction=user_instruction or None)
         db.session.add(project)
         db.session.flush()
 
@@ -280,23 +311,24 @@ def new_project():
                 artifacts_dir,
                 config,
             ),
+            kwargs={"user_instruction": project.user_instruction or ""},
             daemon=True,
         )
         thread.start()
 
         flash("Generation started! This may take a few minutes.", "success")
-        return redirect(url_for("main.project", project_id=project.id))
+        return redirect(url_for("main.project", project_uuid=project.uuid))
 
     return render_template("new_project.html")
 
 
-@main_bp.route("/project/<int:project_id>")
+@main_bp.route("/project/<string:project_uuid>")
 @login_required
-def project(project_id: int):
+def project(project_uuid: str):
     if current_user.is_admin:
-        p = Project.query.get_or_404(project_id)
+        p = Project.query.filter_by(uuid=project_uuid).first_or_404()
     else:
-        p = Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+        p = Project.query.filter_by(uuid=project_uuid, user_id=current_user.id).first_or_404()
     audit_data = None
     if p.audit_json:
         try:
@@ -334,12 +366,15 @@ def _parse_model_usage(p: Project) -> list[dict]:
     return result
 
 
-@main_bp.route("/project/<int:project_id>/status")
+@main_bp.route("/project/<string:project_uuid>/status")
 @login_required
-def project_status(project_id: int):
-    p = Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+def project_status(project_uuid: str):
+    if current_user.is_admin:
+        p = Project.query.filter_by(uuid=project_uuid).first_or_404()
+    else:
+        p = Project.query.filter_by(uuid=project_uuid, user_id=current_user.id).first_or_404()
     with _progress_lock:
-        live = _progress.get(project_id, {})
+        live = _progress.get(p.id, {})
     return jsonify(
         {
             "status": p.status,
@@ -351,42 +386,56 @@ def project_status(project_id: int):
     )
 
 
-def _get_project_for_user(project_id: int) -> "Project":
+def _get_project_for_user(project_uuid: str) -> "Project":
     """Return project; admins can access any project."""
     if current_user.is_admin:
-        return Project.query.get_or_404(project_id)
-    return Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+        return Project.query.filter_by(uuid=project_uuid).first_or_404()
+    return Project.query.filter_by(uuid=project_uuid, user_id=current_user.id).first_or_404()
 
 
-@main_bp.route("/project/<int:project_id>/download")
+@main_bp.route("/project/<string:project_uuid>/download")
 @login_required
-def project_download(project_id: int):
-    p = _get_project_for_user(project_id)
+def project_download(project_uuid: str):
+    p = _get_project_for_user(project_uuid)
     if p.status != "completed" or not p.docx_path or not Path(p.docx_path).exists():
         flash("Download not available.", "danger")
-        return redirect(url_for("main.project", project_id=project_id))
+        return redirect(url_for("main.project", project_uuid=project_uuid))
     safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in p.course_name)
     return send_file(p.docx_path, as_attachment=True, download_name=f"{safe_name}_notes.docx")
 
 
-@main_bp.route("/project/<int:project_id>/download_pdf")
+@main_bp.route("/project/<string:project_uuid>/download_pdf")
 @login_required
-def project_download_pdf(project_id: int):
-    p = _get_project_for_user(project_id)
+def project_download_pdf(project_uuid: str):
+    p = _get_project_for_user(project_uuid)
     if p.status != "completed" or not getattr(p, "pdf_path", None) or not Path(p.pdf_path).exists():
         flash("PDF Download not available.", "danger")
-        return redirect(url_for("main.project", project_id=project_id))
+        return redirect(url_for("main.project", project_uuid=project_uuid))
     safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in p.course_name)
     return send_file(p.pdf_path, as_attachment=True, download_name=f"{safe_name}_notes.pdf")
 
 
-@main_bp.route("/project/<int:project_id>/delete", methods=["POST"])
+@main_bp.route("/project/<string:project_uuid>/cancel", methods=["POST"])
 @login_required
-def project_delete(project_id: int):
-    p = Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+def project_cancel(project_uuid: str):
+    if current_user.is_admin:
+        p = Project.query.filter_by(uuid=project_uuid).first_or_404()
+    else:
+        p = Project.query.filter_by(uuid=project_uuid, user_id=current_user.id).first_or_404()
+    if p.status == "running":
+        with _cancel_lock:
+            _cancel_requested.add(p.id)
+        flash("Cancellation requested. The process will stop at the next checkpoint.", "warning")
+    return redirect(url_for("main.project", project_uuid=project_uuid))
+
+
+@main_bp.route("/project/<string:project_uuid>/delete", methods=["POST"])
+@login_required
+def project_delete(project_uuid: str):
+    p = Project.query.filter_by(uuid=project_uuid, user_id=current_user.id).first_or_404()
     if p.status == "running":
         flash("Cannot delete a running project.", "warning")
-        return redirect(url_for("main.project", project_id=project_id))
+        return redirect(url_for("main.project", project_uuid=project_uuid))
     db.session.delete(p)
     db.session.commit()
     flash("Project deleted.", "success")
