@@ -25,6 +25,12 @@ COPY src ./src
 RUN pip install --no-deps -e .
 
 ENV PYTHONPATH=/app/src
-EXPOSE 5000
 
-CMD ["slideagent-web", "--host", "0.0.0.0", "--port", "5000", "--data-dir", "/app/data"]
+COPY wsgi.py ./
+
+EXPOSE 8000
+
+# 1 worker keeps in-memory state (progress tracking, cancel flags) consistent.
+# 4 threads handle concurrent HTTP requests within that worker.
+CMD ["gunicorn", "--workers", "1", "--threads", "4", "--bind", "0.0.0.0:8000", \
+     "--timeout", "600", "--keep-alive", "5", "wsgi:app"]
