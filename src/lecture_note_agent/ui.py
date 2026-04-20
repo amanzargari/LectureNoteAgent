@@ -228,10 +228,14 @@ def app() -> None:
 
             note_text = artifacts.final_markdown
             output_docx = output_path.read_bytes()
+            
+            pdf_path = output_path.with_suffix(".pdf")
+            output_pdf = pdf_path.read_bytes() if pdf_path.exists() else b""
 
             st.session_state["last_run"] = {
                 "note_text": note_text,
                 "output_docx": output_docx,
+                "output_pdf": output_pdf,
                 "audit_json": artifacts.audit_json,
                 "checklist_text": artifacts.checklist_markdown,
                 "model_calls": int(getattr(artifacts, "model_calls", 0) or 0),
@@ -266,6 +270,15 @@ def app() -> None:
                 use_container_width=True,
                 key="download_lecture_notes",
             )
+            if last_run.get("output_pdf"):
+                st.download_button(
+                    "⬇️ Download lecture_notes.pdf",
+                    data=last_run.get("output_pdf", b""),
+                    file_name="lecture_notes.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="download_lecture_notes_pdf",
+                )
 
         with col2:
             st.subheader("Audit Report")

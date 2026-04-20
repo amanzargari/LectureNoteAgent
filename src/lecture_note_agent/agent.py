@@ -12,6 +12,7 @@ from pypdf import PdfReader, PdfWriter
 
 from .config import AgentConfig, ensure_api_key
 from .docx_utils import write_docx_from_markdown
+from .pdf_utils import write_pdf_from_markdown
 from .io_utils import (
     build_source_payload,
     extract_slide_images,
@@ -683,6 +684,14 @@ class LectureNoteAgent:
         write_docx_from_markdown(
             markdown_text=final_notes_md,
             output_path=str(out_path),
+            course_name=course_name,
+            slide_images=slide_images,
+        )
+
+        pdf_path = out_path.with_suffix(".pdf")
+        write_pdf_from_markdown(
+            markdown_text=final_notes_md,
+            output_path=str(pdf_path),
             course_name=course_name,
             slide_images=slide_images,
         )

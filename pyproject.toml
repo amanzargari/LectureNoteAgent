@@ -24,6 +24,8 @@ dependencies = [
   "flask-sqlalchemy>=3.1.0",
   "flask-login>=0.6.3",
   "werkzeug>=3.0.0",
+  "markdown>=3.4.4",
+  "weasyprint>=60.1",
 ]
 
 [tool.setuptools]

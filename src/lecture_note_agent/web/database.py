@@ -66,6 +66,7 @@ class Project(db.Model):
     checklist_markdown = db.Column(db.Text)
     audit_json = db.Column(db.Text)
     docx_path = db.Column(db.String(512))
+    pdf_path = db.Column(db.String(512))
     token_prompt = db.Column(db.Integer, default=0)
     token_completion = db.Column(db.Integer, default=0)
     token_total = db.Column(db.Integer, default=0)

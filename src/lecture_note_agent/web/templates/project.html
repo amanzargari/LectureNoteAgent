@@ -21,6 +21,11 @@
       <i class="fa-solid fa-file-word me-2"></i>Download DOCX
     </a>
     {% endif %}
+    {% if project.status == 'completed' and project.pdf_path %}
+    <a href="{{ url_for('main.project_download_pdf', project_id=project.id) }}" class="btn btn-danger">
+      <i class="fa-solid fa-file-pdf me-2"></i>Download PDF
+    </a>
+    {% endif %}
     <form method="POST" action="{{ url_for('main.project_delete', project_id=project.id) }}"
           onsubmit="return confirm('Delete this project?')">
       <button type="submit" class="btn btn-outline-danger" {% if project.status == 'running' %}disabled{% endif %}>

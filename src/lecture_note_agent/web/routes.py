@@ -127,6 +127,7 @@ def _run_project_bg(app, project_id: int, slides_path: str, transcript_path: str
                 row.checklist_markdown = artifacts.checklist_markdown
                 row.audit_json = artifacts.audit_json
                 row.docx_path = output_path
+                row.pdf_path = str(Path(output_path).with_suffix(".pdf"))
                 row.token_prompt = artifacts.prompt_tokens
                 row.token_completion = artifacts.completion_tokens
                 row.token_total = artifacts.total_tokens
@@ -276,6 +277,17 @@ def project_download(project_id: int):
         return redirect(url_for("main.project", project_id=project_id))
     safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in p.course_name)
     return send_file(p.docx_path, as_attachment=True, download_name=f"{safe_name}_notes.docx")
+
+
+@main_bp.route("/project/<int:project_id>/download_pdf")
+@login_required
+def project_download_pdf(project_id: int):
+    p = Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+    if p.status != "completed" or not getattr(p, "pdf_path", None) or not Path(p.pdf_path).exists():
+        flash("PDF Download not available.", "danger")
+        return redirect(url_for("main.project", project_id=project_id))
+    safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in p.course_name)
+    return send_file(p.pdf_path, as_attachment=True, download_name=f"{safe_name}_notes.pdf")
 
 
 @main_bp.route("/project/<int:project_id>/delete", methods=["POST"])
