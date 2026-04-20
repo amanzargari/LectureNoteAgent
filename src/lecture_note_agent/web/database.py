@@ -105,3 +105,19 @@ class GlobalSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(128), unique=True, nullable=False)
     value = db.Column(db.Text, default="")
+
+
+class RegistrationRequest(db.Model):
+    __tablename__ = "registration_requests"
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), nullable=False)
+    email = db.Column(db.String(120))
+    password_hash = db.Column(db.String(256), nullable=False)
+    requested_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # pending / approved / rejected
+    status = db.Column(db.String(16), default="pending")
+    admin_note = db.Column(db.Text)
+
+    def set_password(self, password: str) -> None:
+        from werkzeug.security import generate_password_hash
+        self.password_hash = generate_password_hash(password)

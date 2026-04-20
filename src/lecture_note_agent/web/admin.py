@@ -11,7 +11,7 @@ from flask import Blueprint, flash, jsonify, redirect, render_template, request,
 from flask_login import current_user, login_required
 from sqlalchemy import func
 
-from .database import GlobalSettings, ModelPricing, Project, User, UserSettings, db
+from .database import GlobalSettings, ModelPricing, Project, RegistrationRequest, User, UserSettings, db
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -325,6 +325,63 @@ def pricing():
             routing = {}
         prices_with_routing.append((p, routing))
     return render_template("admin/pricing.html", prices=prices_with_routing)
+
+
+@admin_bp.route("/registrations")
+@admin_required
+def registrations():
+    pending = RegistrationRequest.query.filter_by(status="pending").order_by(
+        RegistrationRequest.requested_at.asc()
+    ).all()
+    reviewed = RegistrationRequest.query.filter(
+        RegistrationRequest.status != "pending"
+    ).order_by(RegistrationRequest.requested_at.desc()).limit(50).all()
+    return render_template("admin/registrations.html", pending=pending, reviewed=reviewed)
+
+
+@admin_bp.route("/registrations/<int:req_id>/approve", methods=["POST"])
+@admin_required
+def approve_registration(req_id: int):
+    reg = db.session.get(RegistrationRequest, req_id)
+    if not reg or reg.status != "pending":
+        flash("Registration request not found or already reviewed.", "warning")
+        return redirect(url_for("admin.registrations"))
+
+    if User.query.filter_by(username=reg.username).first():
+        flash(f'Username "{reg.username}" was taken by the time of approval.', "danger")
+        reg.status = "rejected"
+        reg.admin_note = "Username already exists."
+        db.session.commit()
+        return redirect(url_for("admin.registrations"))
+
+    user = User(username=reg.username, email=reg.email, is_admin=False, is_active=True)
+    user.password_hash = reg.password_hash
+    db.session.add(user)
+    db.session.flush()
+    db.session.add(UserSettings(user_id=user.id))
+
+    reg.status = "approved"
+    reg.admin_note = request.form.get("admin_note", "").strip() or None
+    db.session.commit()
+
+    flash(f'User "{reg.username}" approved and account created.', "success")
+    return redirect(url_for("admin.registrations"))
+
+
+@admin_bp.route("/registrations/<int:req_id>/reject", methods=["POST"])
+@admin_required
+def reject_registration(req_id: int):
+    reg = db.session.get(RegistrationRequest, req_id)
+    if not reg or reg.status != "pending":
+        flash("Registration request not found or already reviewed.", "warning")
+        return redirect(url_for("admin.registrations"))
+
+    reg.status = "rejected"
+    reg.admin_note = request.form.get("admin_note", "").strip() or None
+    db.session.commit()
+
+    flash(f'Registration request for "{reg.username}" rejected.', "info")
+    return redirect(url_for("admin.registrations"))
 
 
 @admin_bp.route("/change-password", methods=["GET", "POST"])

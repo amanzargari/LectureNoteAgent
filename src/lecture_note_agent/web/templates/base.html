@@ -49,6 +49,12 @@
       </a>
     </li>
     <li class="nav-item">
+      <a href="{{ url_for('admin.registrations') }}" class="nav-link {% if request.endpoint == 'admin.registrations' %}active{% endif %}">
+        <i class="fa-solid fa-user-clock"></i>
+        <span>Registrations{% if pending_registrations_count %} <span class="badge bg-warning text-dark ms-1">{{ pending_registrations_count }}</span>{% endif %}</span>
+      </a>
+    </li>
+    <li class="nav-item">
       <a href="{{ url_for('admin.pricing') }}" class="nav-link {% if request.endpoint == 'admin.pricing' %}active{% endif %}">
         <i class="fa-solid fa-dollar-sign"></i><span>Model Pricing</span>
       </a>

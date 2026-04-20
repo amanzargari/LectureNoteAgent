@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Registration Requests — Admin — LectureNote AI{% endblock %}
+{% block page_title %}Registration Requests{% endblock %}
+
+{% block content %}
+
+<!-- Pending requests -->
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fa-solid fa-user-clock me-2 text-warning"></i>Pending Requests
+      {% if pending %}
+      <span class="badge bg-warning text-dark ms-2">{{ pending|length }}</span>
+      {% endif %}
+    </span>
+  </div>
+
+  {% if not pending %}
+  <div class="card-body text-muted text-center py-4">
+    <i class="fa-solid fa-circle-check me-2 text-success"></i>No pending registration requests.
+  </div>
+  {% else %}
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Requested</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for reg in pending %}
+        <tr>
+          <td class="fw-semibold">{{ reg.username }}</td>
+          <td class="text-muted small">{{ reg.email or '—' }}</td>
+          <td class="text-muted small">{{ reg.requested_at.strftime('%b %d, %Y %H:%M') }}</td>
+          <td>
+            <div class="d-flex gap-2">
+              <!-- Approve -->
+              <form method="POST" action="{{ url_for('admin.approve_registration', req_id=reg.id) }}"
+                    class="d-flex gap-2">
+                <input type="text" name="admin_note" class="form-control form-control-sm"
+                       placeholder="Optional note" style="width:160px;" />
+                <button type="submit" class="btn btn-sm btn-success"
+                        onclick="return confirm('Approve registration for {{ reg.username }}?')">
+                  <i class="fa-solid fa-check me-1"></i>Approve
+                </button>
+              </form>
+              <!-- Reject -->
+              <form method="POST" action="{{ url_for('admin.reject_registration', req_id=reg.id) }}"
+                    class="d-flex gap-2">
+                <input type="text" name="admin_note" class="form-control form-control-sm"
+                       placeholder="Optional note" style="width:160px;" />
+                <button type="submit" class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Reject registration for {{ reg.username }}?')">
+                  <i class="fa-solid fa-xmark me-1"></i>Reject
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Recently reviewed -->
+{% if reviewed %}
+<div class="card">
+  <div class="card-header">
+    <i class="fa-solid fa-clock-rotate-left me-2 text-muted"></i>Recently Reviewed
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Requested</th>
+          <th>Status</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for reg in reviewed %}
+        <tr>
+          <td class="fw-semibold">{{ reg.username }}</td>
+          <td class="text-muted small">{{ reg.email or '—' }}</td>
+          <td class="text-muted small">{{ reg.requested_at.strftime('%b %d, %Y %H:%M') }}</td>
+          <td>
+            {% if reg.status == 'approved' %}
+            <span class="badge bg-success"><i class="fa-solid fa-check me-1"></i>Approved</span>
+            {% else %}
+            <span class="badge bg-secondary"><i class="fa-solid fa-xmark me-1"></i>Rejected</span>
+            {% endif %}
+          </td>
+          <td class="text-muted small">{{ reg.admin_note or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

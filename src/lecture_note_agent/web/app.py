@@ -9,7 +9,7 @@ from pathlib import Path
 from flask import Flask
 from flask_login import LoginManager
 
-from .database import GlobalSettings, ModelPricing, User, UserSettings, db
+from .database import GlobalSettings, ModelPricing, RegistrationRequest, User, UserSettings, db
 
 
 def _parse_openrouter_models(data: dict) -> list[tuple[str, float, float]]:
@@ -80,6 +80,17 @@ def create_app(data_dir: str | None = None) -> Flask:
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(admin_bp, url_prefix="/admin")
+
+    @app.context_processor
+    def inject_pending_registrations():
+        try:
+            from flask_login import current_user
+            if current_user.is_authenticated and current_user.is_admin:
+                count = RegistrationRequest.query.filter_by(status="pending").count()
+                return {"pending_registrations_count": count}
+        except Exception:
+            pass
+        return {"pending_registrations_count": 0}
 
     with app.app_context():
         db.create_all()
@@ -156,6 +167,18 @@ def _migrate_db() -> None:
     # model_pricing columns
     if not _has_col("model_pricing", "provider_config"):
         cur.execute("ALTER TABLE model_pricing ADD COLUMN provider_config TEXT DEFAULT ''")
+
+    # projects: cancelled status support (no new column needed — status is VARCHAR)
+    # projects: user_instruction column
+    if not _has_col("projects", "user_instruction"):
+        cur.execute("ALTER TABLE projects ADD COLUMN user_instruction TEXT")
+
+    # registration_requests table (created via db.create_all, but ensure columns exist)
+    if not _has_col("registration_requests", "admin_note"):
+        try:
+            cur.execute("ALTER TABLE registration_requests ADD COLUMN admin_note TEXT")
+        except Exception:
+            pass
 
     # user_settings columns
     user_settings_cols = [
