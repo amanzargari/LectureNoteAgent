@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -8,7 +9,7 @@ from pptx import Presentation
 from pptx.util import Inches
 
 from lecture_note_agent.docx_utils import write_docx_from_markdown
-from lecture_note_agent.io_utils import SlideImageAsset, extract_slide_images
+from lecture_note_agent.io_utils import SlideImageAsset, extract_slide_images, parse_slides
 
 
 def test_write_docx_from_markdown_embeds_images(tmp_path: Path) -> None:
@@ -189,3 +190,77 @@ def test_extract_slide_images_avoids_over_aggressive_crop(tmp_path: Path, monkey
     # Should keep original dimensions when crop is too aggressive.
     assert width == 100
     assert height == 50
+
+
+def test_parse_slides_pdf_filters_low_signal_images(monkeypatch, tmp_path: Path) -> None:
+    class FakePdfImage:
+        def __init__(self, name: str, size: tuple[int, int], color: tuple[int, int, int]) -> None:
+            self.name = name
+            self.image = Image.new("RGB", size, color=color)
+
+            buf = BytesIO()
+            self.image.save(buf, format="PNG")
+            self.data = buf.getvalue()
+
+    class FakePage:
+        def __init__(self, images: list[FakePdfImage]) -> None:
+            self.images = images
+
+        def extract_text(self) -> str:
+            return "Filtering Test Slide\nBody"
+
+    class FakeReader:
+        def __init__(self, _path: str) -> None:
+            self.pages = [
+                FakePage(
+                    [
+                        FakePdfImage("big_a", (500, 300), (20, 100, 180)),
+                        FakePdfImage("big_b", (380, 260), (200, 80, 60)),
+                        FakePdfImage("tiny_icon", (30, 30), (10, 10, 10)),
+                        FakePdfImage("thin_strip", (160, 20), (120, 120, 120)),
+                        FakePdfImage("big_c", (420, 220), (40, 200, 80)),
+                    ]
+                )
+            ]
+
+    monkeypatch.setenv("PDF_MAX_IMAGES_PER_SLIDE", "3")
+    monkeypatch.setenv("PDF_IMAGE_MIN_AREA", "7000")
+    monkeypatch.setenv("PDF_IMAGE_MIN_EDGE", "45")
+    monkeypatch.setattr("lecture_note_agent.io_utils.PdfReader", FakeReader)
+
+    pdf_path = tmp_path / "fake.pdf"
+    slides = parse_slides(str(pdf_path))
+
+    assert len(slides) == 1
+    assert slides[0].image_refs == ["big_a", "big_b", "big_c"]
+
+
+def test_write_docx_skips_tiny_and_duplicate_inline_images(tmp_path: Path) -> None:
+    tiny_image = tmp_path / "tiny.png"
+    main_image = tmp_path / "main.png"
+    Image.new("RGB", (30, 30), color=(240, 30, 30)).save(tiny_image)
+    Image.new("RGB", (220, 140), color=(40, 140, 230)).save(main_image)
+
+    output_docx = tmp_path / "filtered_inline_images.docx"
+    write_docx_from_markdown(
+        markdown_text=(
+            "# Topic\n"
+            "See Figure 1 for the real diagram.\n\n"
+            "![Tiny decorative icon](image_ref:tiny_ref)\n"
+            "![System architecture](image_ref:main_ref)\n"
+            "![System architecture duplicate](image_ref:main_ref)\n"
+        ),
+        output_path=str(output_docx),
+        course_name="Course",
+        slide_images={
+            1: [
+                SlideImageAsset(slide_number=1, image_ref="tiny_ref", image_path=str(tiny_image)),
+                SlideImageAsset(slide_number=1, image_ref="main_ref", image_path=str(main_image)),
+            ]
+        },
+    )
+
+    with ZipFile(output_docx, "r") as archive:
+        media_files = [name for name in archive.namelist() if name.startswith("word/media/")]
+
+    assert len(media_files) == 1

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import tempfile
 from pathlib import Path
@@ -115,6 +116,68 @@ def _normalize_figure_label(label: str) -> str:
     return cleaned.strip()
 
 
+def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return max(minimum, default)
+    try:
+        value = int(raw.strip())
+    except (TypeError, ValueError):
+        return max(minimum, default)
+    return max(minimum, value)
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return max(minimum, default)
+    try:
+        value = float(raw.strip())
+    except (TypeError, ValueError):
+        return max(minimum, default)
+    return max(minimum, value)
+
+
+def _docx_image_filter_config() -> tuple[int, int, float, int]:
+    min_area = _env_int("DOCX_IMAGE_MIN_AREA", 7000, minimum=1)
+    min_edge = _env_int("DOCX_IMAGE_MIN_EDGE", 45, minimum=1)
+    max_aspect_ratio = _env_float("DOCX_IMAGE_MAX_ASPECT_RATIO", 8.0, minimum=1.0)
+    max_inline_images = _env_int("DOCX_MAX_INLINE_IMAGES", 12, minimum=1)
+    return min_area, min_edge, max_aspect_ratio, max_inline_images
+
+
+def _is_high_signal_inline_image(img_path: Path, caption: str, context_line: str) -> bool:
+    min_area, min_edge, max_aspect_ratio, _ = _docx_image_filter_config()
+    signal_text = f"{caption} {context_line}".lower()
+
+    if any(tok in signal_text for tok in (" logo", "icon", "stock photo", "decorative", "watermark")):
+        return False
+
+    try:
+        from PIL import Image
+
+        with Image.open(img_path) as img:
+            width_px, height_px = img.size
+    except Exception:
+        # If we cannot inspect dimensions, defer to the existing add-picture fallback path.
+        return True
+
+    if width_px <= 0 or height_px <= 0:
+        return False
+
+    if width_px * height_px < min_area:
+        return False
+
+    if min(width_px, height_px) < min_edge:
+        return False
+
+    aspect_ratio = max(width_px, height_px) / max(1, min(width_px, height_px))
+    if aspect_ratio > max_aspect_ratio:
+        return False
+
+    return True
+
+
 def _compute_dynamic_image_width(img_path: Path, caption: str, context_line: str) -> float:
     max_w = 6.3
     min_w = 2.2
@@ -183,6 +246,8 @@ def _add_markdown_body(document: Document, markdown_text: str, slide_images: dic
     image_index = _build_image_index(slide_images)
     figure_counter = 0
     table_counter = 0
+    _, _, _, max_inline_images = _docx_image_filter_config()
+    used_asset_refs: set[str] = set()
 
     with tempfile.TemporaryDirectory(prefix="docx_img_fallback_") as tmp_dir:
         fallback_dir = Path(tmp_dir)
@@ -231,14 +296,27 @@ def _add_markdown_body(document: Document, markdown_text: str, slide_images: dic
                     asset = _resolve_image_asset(ref_key, image_index)
 
                     if asset is not None:
+                        asset_key = (asset.image_ref or ref_key).strip().lower()
+                        if asset_key in used_asset_refs:
+                            last = m.end()
+                            continue
+                        if figure_counter >= max_inline_images:
+                            last = m.end()
+                            continue
+
                         img_path = Path(asset.image_path)
                         if img_path.exists():
+                            if not _is_high_signal_inline_image(img_path, caption, line):
+                                last = m.end()
+                                continue
+
                             figure_counter += 1
                             width_in = _compute_dynamic_image_width(img_path, caption, line)
                             pic_paragraph = document.add_paragraph()
                             run = pic_paragraph.add_run()
                             ok = _add_picture_with_fallback(run, img_path, fallback_dir, width_in)
                             if ok:
+                                used_asset_refs.add(asset_key)
                                 figure_label = _normalize_figure_label(caption) or asset.image_ref
                                 _add_caption(document, f"Figure {figure_counter}: {figure_label}")
                             else:

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import re
+from io import BytesIO
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
@@ -25,6 +27,149 @@ class SlideImageAsset:
     slide_number: int
     image_ref: str
     image_path: str
+
+
+def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return max(minimum, default)
+
+    try:
+        value = int(raw.strip())
+    except (TypeError, ValueError):
+        return max(minimum, default)
+
+    return max(minimum, value)
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return max(minimum, default)
+
+    try:
+        value = float(raw.strip())
+    except (TypeError, ValueError):
+        return max(minimum, default)
+
+    return max(minimum, value)
+
+
+def _pdf_image_filter_config() -> tuple[int, int, float, int]:
+    """Runtime-tunable guardrails for filtering noisy PDF image objects."""
+    min_area = _env_int("PDF_IMAGE_MIN_AREA", 7000, minimum=1)
+    min_edge = _env_int("PDF_IMAGE_MIN_EDGE", 45, minimum=1)
+    max_aspect_ratio = _env_float("PDF_IMAGE_MAX_ASPECT_RATIO", 8.0, minimum=1.0)
+    max_per_slide = _env_int("PDF_MAX_IMAGES_PER_SLIDE", 3, minimum=1)
+    return min_area, min_edge, max_aspect_ratio, max_per_slide
+
+
+def _pdf_image_dimensions(image_obj: object) -> tuple[int, int]:
+    pil_img = getattr(image_obj, "image", None)
+    if pil_img is not None:
+        try:
+            width_px, height_px = pil_img.size
+            return int(width_px), int(height_px)
+        except Exception:
+            pass
+
+    width = getattr(image_obj, "width", None)
+    height = getattr(image_obj, "height", None)
+    if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
+        return width, height
+
+    blob = getattr(image_obj, "data", None)
+    if isinstance(blob, (bytes, bytearray)) and blob:
+        try:
+            from PIL import Image
+
+            with Image.open(BytesIO(bytes(blob))) as decoded:
+                width_px, height_px = decoded.size
+                return int(width_px), int(height_px)
+        except Exception:
+            return 0, 0
+
+    return 0, 0
+
+
+def _pdf_image_hash(image_obj: object) -> str:
+    blob = getattr(image_obj, "data", None)
+    if isinstance(blob, (bytes, bytearray)) and blob:
+        return hashlib.sha1(bytes(blob)).hexdigest()
+
+    pil_img = getattr(image_obj, "image", None)
+    if pil_img is not None:
+        try:
+            return hashlib.sha1(pil_img.tobytes()).hexdigest()
+        except Exception:
+            return ""
+
+    return ""
+
+
+def _is_high_signal_pdf_image(
+    *,
+    width_px: int,
+    height_px: int,
+    min_area: int,
+    min_edge: int,
+    max_aspect_ratio: float,
+) -> bool:
+    if width_px <= 0 or height_px <= 0:
+        return False
+
+    if width_px * height_px < min_area:
+        return False
+
+    if min(width_px, height_px) < min_edge:
+        return False
+
+    aspect_ratio = max(width_px, height_px) / max(1, min(width_px, height_px))
+    if aspect_ratio > max_aspect_ratio:
+        return False
+
+    return True
+
+
+def _select_pdf_images_for_page(page: object, slide_number: int) -> list[tuple[int, str, object]]:
+    images = list(getattr(page, "images", []) or [])
+    if not images:
+        return []
+
+    min_area, min_edge, max_aspect_ratio, max_per_slide = _pdf_image_filter_config()
+    seen_hashes: set[str] = set()
+    candidates: list[tuple[int, int, str, object]] = []
+
+    for image_idx, image_obj in enumerate(images, 1):
+        image_ref = getattr(image_obj, "name", "") or f"pdf_page_{slide_number}_image_{image_idx}"
+        width_px, height_px = _pdf_image_dimensions(image_obj)
+        if not _is_high_signal_pdf_image(
+            width_px=width_px,
+            height_px=height_px,
+            min_area=min_area,
+            min_edge=min_edge,
+            max_aspect_ratio=max_aspect_ratio,
+        ):
+            continue
+
+        image_hash = _pdf_image_hash(image_obj)
+        if image_hash and image_hash in seen_hashes:
+            continue
+        if image_hash:
+            seen_hashes.add(image_hash)
+
+        area = width_px * height_px
+        candidates.append((area, image_idx, image_ref, image_obj))
+
+    if not candidates:
+        return []
+
+    # Prefer larger, information-dense visuals; keep ordering stable for readability.
+    candidates.sort(key=lambda item: (-item[0], item[1]))
+    selected = candidates[:max_per_slide]
+    selected.sort(key=lambda item: item[1])
+
+    return [(image_idx, image_ref, image_obj) for _, image_idx, image_ref, image_obj in selected]
 
 
 def _extract_formula_candidates(text: str) -> List[str]:
@@ -85,11 +230,8 @@ def parse_slides(
         for i, page in enumerate(reader.pages, 1):
             page_text = (page.extract_text() or "").strip()
             full_text = page_text
-            image_refs: list[str] = []
-            images = getattr(page, "images", []) or []
-            for j, img in enumerate(images, 1):
-                ref = getattr(img, "name", "") or f"pdf_page_{i}_image_{j}"
-                image_refs.append(ref)
+            selected_images = _select_pdf_images_for_page(page, i)
+            image_refs = [image_ref for _, image_ref, _ in selected_images]
             title = full_text.splitlines()[0][:140] if full_text else f"Slide {i}"
             slides.append(
                 SlideUnit(
@@ -339,12 +481,12 @@ def extract_slide_images(slides_path: str, artifacts_dir: str | None = None) -> 
         reader = PdfReader(str(source))
         for slide_number, page in enumerate(reader.pages, 1):
             assets: list[SlideImageAsset] = []
-            images = getattr(page, "images", []) or []
-            for image_idx, img in enumerate(images, 1):
-                image_ref = getattr(img, "name", "") or f"pdf_page_{slide_number}_image_{image_idx}"
+            selected_images = _select_pdf_images_for_page(page, slide_number)
+            for _, image_ref, img in selected_images:
+                export_idx = len(assets) + 1
                 pil_img = getattr(img, "image", None)
                 if pil_img is not None:
-                    png_path = image_root / f"slide_{slide_number}_{image_idx}.png"
+                    png_path = image_root / f"slide_{slide_number}_{export_idx}.png"
                     pil_img.save(png_path)
                     assets.append(
                         SlideImageAsset(
@@ -356,7 +498,7 @@ def extract_slide_images(slides_path: str, artifacts_dir: str | None = None) -> 
                     continue
 
                 suffix = _safe_suffix(Path(image_ref).suffix)
-                image_path = image_root / f"slide_{slide_number}_{image_idx}{suffix}"
+                image_path = image_root / f"slide_{slide_number}_{export_idx}{suffix}"
                 blob = getattr(img, "data", None)
                 if isinstance(blob, (bytes, bytearray)) and blob:
                     image_path.write_bytes(bytes(blob))

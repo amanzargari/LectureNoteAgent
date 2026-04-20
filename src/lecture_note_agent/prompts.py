@@ -21,7 +21,7 @@ Output only a markdown checklist.
 
 DRAFT_NOTES_PROMPT = """
 You are an expert academic note-taker producing comprehensive, self-contained study materials.
-Using ONLY the provided source bundle and coverage checklist, write full lecture notes in markdown.
+Using ONLY the provided source bundle and checklist, write full lecture notes in markdown.
 
 STRUCTURE:
 - Start with "## Overview" — state the lecture topic and 3-5 learning objectives.
@@ -45,6 +45,8 @@ IMAGES:
 - Caption: describe what the image shows — do NOT start with "Figure N:".
 - Each image MUST be referenced in the surrounding prose as "Figure N" (auto-incremented from 1).
 - Do not insert the same image more than once.
+- NEVER include decorative visuals (logos, icons, title-slide art, portraits/headshots, stock photos) unless the lecture explicitly analyzes that visual.
+- Keep image density low: prefer one high-information image per subsection over many small or repetitive snippets.
 
 FORMATTING:
 - **Bold** key terms on first definition.
@@ -114,6 +116,7 @@ Decision rules for each image:
   or any visual concept that words alone cannot convey equally well.
 - REMOVE if: the image is decorative (title slide art, stock photos), duplicates another image already present,
   or adds no information beyond the surrounding text.
+- REMOVE if: the image is a portrait/headshot, logo/icon, background texture, or a tiny crop/snippet with low informational value.
 - REPOSITION if: the image appears before the concept is introduced or after the explanation ends —
   move it to immediately follow the sentence that first references it.
 - CAPTION: must describe what the image shows (not just repeat the section heading).
