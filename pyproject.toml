@@ -20,6 +20,10 @@ dependencies = [
   "click>=8.1.7",
   "streamlit>=1.39.0",
   "pytest>=8.3.0",
+  "flask>=3.0.0",
+  "flask-sqlalchemy>=3.1.0",
+  "flask-login>=0.6.3",
+  "werkzeug>=3.0.0",
 ]
 
 [tool.setuptools]
@@ -31,3 +35,4 @@ where = ["src"]
 [project.scripts]
 slideagent = "lecture_note_agent.cli:main"
 slideagent-ui = "lecture_note_agent.ui:run"
+slideagent-web = "lecture_note_agent.web.app:run"

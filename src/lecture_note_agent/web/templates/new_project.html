@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}New Project — LectureNote AI{% endblock %}
+{% block page_title %}New Project{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="fa-solid fa-upload me-2 text-primary"></i>Create New Project</h5>
+      </div>
+      <div class="card-body">
+        <form method="POST" enctype="multipart/form-data" id="newProjectForm">
+
+          <div class="mb-4">
+            <label class="form-label">Course Name <span class="text-danger">*</span></label>
+            <input type="text" name="course_name" class="form-control" placeholder="e.g. Introduction to Machine Learning"
+                   required autofocus />
+            <div class="form-text">This will be used as the title of your lecture notes.</div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label">Slides File <span class="text-danger">*</span></label>
+            <div class="upload-zone" id="slidesZone">
+              <input type="file" name="slides" id="slidesInput" class="upload-input"
+                     accept=".pdf,.pptx,.md,.txt" required />
+              <div class="upload-placeholder">
+                <i class="fa-solid fa-file-arrow-up upload-icon"></i>
+                <p class="mb-1">Drag & drop or click to select</p>
+                <p class="text-muted small mb-0">PDF, PPTX, MD, TXT (max 200 MB)</p>
+              </div>
+              <div class="upload-selected d-none">
+                <i class="fa-solid fa-file-check text-success me-2"></i>
+                <span class="upload-filename"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label">Transcript <span class="text-muted small">(optional)</span></label>
+            <div class="upload-zone" id="transcriptZone">
+              <input type="file" name="transcript" id="transcriptInput" class="upload-input"
+                     accept=".txt,.md,.srt" />
+              <div class="upload-placeholder">
+                <i class="fa-solid fa-file-arrow-up upload-icon"></i>
+                <p class="mb-1">Drag & drop or click to select</p>
+                <p class="text-muted small mb-0">TXT, MD, SRT</p>
+              </div>
+              <div class="upload-selected d-none">
+                <i class="fa-solid fa-file-check text-success me-2"></i>
+                <span class="upload-filename"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary" id="submitBtn">
+              <i class="fa-solid fa-wand-magic-sparkles me-2"></i>Generate Notes
+            </button>
+            <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-body">
+        <h6 class="text-muted mb-2"><i class="fa-solid fa-circle-info me-2"></i>What happens next?</h6>
+        <ol class="text-muted small mb-0">
+          <li>Your files are uploaded and the AI pipeline starts automatically.</li>
+          <li>Slides are parsed, OCR'd (for PDFs), and a coverage checklist is built.</li>
+          <li>Comprehensive lecture notes are drafted and audited for completeness.</li>
+          <li>A formatted DOCX file is generated and ready to download.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% block scripts %}
+<script>
+function setupUploadZone(zoneId, inputId) {
+  const zone = document.getElementById(zoneId);
+  const input = document.getElementById(inputId);
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) {
+      input.files = e.dataTransfer.files;
+      showFile(zone, e.dataTransfer.files[0].name);
+    }
+  });
+  input.addEventListener('change', () => {
+    if (input.files.length) showFile(zone, input.files[0].name);
+  });
+}
+
+function showFile(zone, name) {
+  zone.querySelector('.upload-placeholder').classList.add('d-none');
+  const sel = zone.querySelector('.upload-selected');
+  sel.querySelector('.upload-filename').textContent = name;
+  sel.classList.remove('d-none');
+}
+
+setupUploadZone('slidesZone', 'slidesInput');
+setupUploadZone('transcriptZone', 'transcriptInput');
+
+document.getElementById('newProjectForm').addEventListener('submit', function() {
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Uploading…';
+});
+</script>
+{% endblock %}
+{% endblock %}

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}LectureNote AI{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
+</head>
+<body>
+
+{% if current_user.is_authenticated %}
+
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-brand">
+      <i class="fa-solid fa-book-open-reader me-2"></i>
+      <span>LectureNote AI</span>
+    </div>
+  </div>
+
+  <ul class="sidebar-nav">
+    <li class="nav-item">
+      <a href="{{ url_for('main.dashboard') }}" class="nav-link {% if request.endpoint == 'main.dashboard' %}active{% endif %}">
+        <i class="fa-solid fa-house"></i><span>Dashboard</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="{{ url_for('main.new_project') }}" class="nav-link {% if request.endpoint == 'main.new_project' %}active{% endif %}">
+        <i class="fa-solid fa-plus-circle"></i><span>New Project</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="{{ url_for('main.settings') }}" class="nav-link {% if request.endpoint == 'main.settings' %}active{% endif %}">
+        <i class="fa-solid fa-sliders"></i><span>My Settings</span>
+      </a>
+    </li>
+    {% if current_user.is_admin %}
+    <li class="nav-section">Admin</li>
+    <li class="nav-item">
+      <a href="{{ url_for('admin.index') }}" class="nav-link {% if request.endpoint == 'admin.index' %}active{% endif %}">
+        <i class="fa-solid fa-gauge-high"></i><span>Overview</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="{{ url_for('admin.users') }}" class="nav-link {% if request.endpoint in ['admin.users','admin.new_user','admin.edit_user'] %}active{% endif %}">
+        <i class="fa-solid fa-users"></i><span>Users</span>
+      </a>
+    </li>
+    <li class="nav-item">
+      <a href="{{ url_for('admin.global_settings') }}" class="nav-link {% if request.endpoint == 'admin.global_settings' %}active{% endif %}">
+        <i class="fa-solid fa-gear"></i><span>Global Settings</span>
+      </a>
+    </li>
+    {% endif %}
+  </ul>
+
+  <div class="sidebar-footer">
+    <div class="user-info">
+      <div class="user-avatar">{{ current_user.username[0].upper() }}</div>
+      <div class="user-details">
+        <div class="user-name">{{ current_user.username }}</div>
+        <div class="user-role">{% if current_user.is_admin %}Admin{% else %}User{% endif %}</div>
+      </div>
+    </div>
+    <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-outline-secondary logout-btn" title="Logout">
+      <i class="fa-solid fa-right-from-bracket"></i>
+    </a>
+  </div>
+</nav>
+
+<div class="main-content" id="main-content">
+  <header class="topbar">
+    <button class="btn btn-sm sidebar-toggle" id="sidebarToggle">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <div class="topbar-title">{% block page_title %}{% endblock %}</div>
+    <div class="topbar-right">
+      {% if current_user.is_admin %}
+      <span class="badge bg-warning text-dark"><i class="fa-solid fa-shield-halved me-1"></i>Admin</span>
+      {% endif %}
+    </div>
+  </header>
+
+  <div class="content-body">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-container">
+      {% for category, message in messages %}
+      <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {% if category == 'success' %}<i class="fa-solid fa-circle-check me-2"></i>
+        {% elif category == 'danger' %}<i class="fa-solid fa-circle-xmark me-2"></i>
+        {% elif category == 'warning' %}<i class="fa-solid fa-triangle-exclamation me-2"></i>
+        {% else %}<i class="fa-solid fa-circle-info me-2"></i>{% endif %}
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+{% else %}
+
+<div class="auth-wrapper">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+  <div style="position:fixed;top:1rem;right:1rem;z-index:9999;min-width:280px;">
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+      {{ message }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endwith %}
+  {% block auth_content %}{% endblock %}
+</div>
+
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

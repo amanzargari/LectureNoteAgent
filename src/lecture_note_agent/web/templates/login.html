@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Login — LectureNote AI{% endblock %}
+
+{% block auth_content %}
+<div class="login-container">
+  <div class="login-card">
+    <div class="login-logo">
+      <i class="fa-solid fa-book-open-reader"></i>
+    </div>
+    <h1 class="login-title">LectureNote AI</h1>
+    <p class="login-subtitle">Sign in to your account</p>
+
+    <form method="POST" action="{{ url_for('auth.login') }}">
+      <div class="mb-3">
+        <label class="form-label text-muted small">Username</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="fa-solid fa-user fa-sm"></i></span>
+          <input type="text" name="username" class="form-control" placeholder="Enter username"
+                 autofocus autocomplete="username" required />
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label text-muted small">Password</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="fa-solid fa-lock fa-sm"></i></span>
+          <input type="password" name="password" class="form-control" placeholder="Enter password"
+                 autocomplete="current-password" required />
+        </div>
+      </div>
+      <div class="mb-4 form-check">
+        <input type="checkbox" class="form-check-input" id="remember" name="remember" />
+        <label class="form-check-label text-muted small" for="remember">Remember me</label>
+      </div>
+      <button type="submit" class="btn btn-primary w-100 btn-login">
+        <i class="fa-solid fa-right-to-bracket me-2"></i>Sign In
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — LectureNote AI{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h4 class="mb-0">My Projects</h4>
+    <p class="text-muted small mb-0">{{ projects|length }} project{{ 's' if projects|length != 1 }}</p>
+  </div>
+  <a href="{{ url_for('main.new_project') }}" class="btn btn-primary">
+    <i class="fa-solid fa-plus me-2"></i>New Project
+  </a>
+</div>
+
+{% if not projects %}
+<div class="empty-state">
+  <i class="fa-solid fa-file-lines empty-state-icon"></i>
+  <h5>No projects yet</h5>
+  <p class="text-muted">Upload your lecture slides to get started.</p>
+  <a href="{{ url_for('main.new_project') }}" class="btn btn-primary mt-2">
+    <i class="fa-solid fa-plus me-2"></i>Create Your First Project
+  </a>
+</div>
+{% else %}
+<div class="row g-3">
+  {% for p in projects %}
+  <div class="col-md-6 col-xl-4">
+    <div class="card project-card h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <h6 class="card-title mb-0 project-name">{{ p.course_name }}</h6>
+          <span class="badge status-badge status-{{ p.status }}">
+            {% if p.status == 'completed' %}<i class="fa-solid fa-check me-1"></i>Done
+            {% elif p.status == 'running' %}<i class="fa-solid fa-spinner fa-spin me-1"></i>Running
+            {% elif p.status == 'failed' %}<i class="fa-solid fa-xmark me-1"></i>Failed
+            {% else %}<i class="fa-solid fa-clock me-1"></i>Pending{% endif %}
+          </span>
+        </div>
+        <p class="text-muted small mb-2">
+          <i class="fa-regular fa-calendar me-1"></i>
+          {{ p.created_at.strftime('%b %d, %Y %H:%M') }}
+        </p>
+        {% if p.status == 'running' %}
+        <div class="progress mb-2" style="height:4px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+               style="width: {{ p.progress_pct|round|int }}%"></div>
+        </div>
+        <p class="text-muted small mb-2">{{ p.progress_stage or 'Starting…' }}</p>
+        {% endif %}
+        {% if p.status == 'completed' and p.model_calls %}
+        <div class="project-stats">
+          <span title="Model calls"><i class="fa-solid fa-bolt text-warning"></i> {{ p.model_calls }}</span>
+          <span title="Total tokens"><i class="fa-solid fa-coins text-info"></i> {{ '{:,}'.format(p.token_total or 0) }}</span>
+          {% if p.elapsed_seconds %}
+          <span title="Elapsed"><i class="fa-regular fa-clock text-muted"></i> {{ '%.0f'|format(p.elapsed_seconds) }}s</span>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+      <div class="card-footer d-flex gap-2">
+        <a href="{{ url_for('main.project', project_id=p.id) }}" class="btn btn-sm btn-outline-primary flex-fill">
+          <i class="fa-solid fa-eye me-1"></i>View
+        </a>
+        {% if p.status == 'completed' and p.docx_path %}
+        <a href="{{ url_for('main.project_download', project_id=p.id) }}" class="btn btn-sm btn-outline-success">
+          <i class="fa-solid fa-download"></i>
+        </a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

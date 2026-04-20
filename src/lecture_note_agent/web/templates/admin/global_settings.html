@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Global Settings — Admin — LectureNote AI{% endblock %}
+{% block page_title %}Global Settings{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <form method="POST" action="{{ url_for('admin.global_settings') }}">
+
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-key me-2 text-warning"></i>API Credentials</div>
+        <div class="card-body">
+          <p class="text-muted small">These are used by all users who have not set their own API key.</p>
+          <div class="mb-3">
+            <label class="form-label">API Key</label>
+            <input type="password" name="api_key" class="form-control"
+                   value="{{ settings.get('api_key','') }}" placeholder="sk-…" autocomplete="off" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Base URL</label>
+            <input type="text" name="api_base_url" class="form-control"
+                   value="{{ settings.get('api_base_url','') }}"
+                   placeholder="https://api.openai.com/v1" />
+            <div class="form-text">Supports OpenAI, OpenRouter, and any OpenAI-compatible endpoint.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-robot me-2 text-info"></i>Default Models</div>
+        <div class="card-body">
+          <p class="text-muted small">Applied to all users who have not configured per-user model overrides.</p>
+          <div class="row g-3">
+            {% set model_fields = [
+              ('Fallback / Default Model', 'model_fallback'),
+              ('OCR Model', 'model_ocr'),
+              ('Checklist Model', 'model_checklist'),
+              ('Draft Model', 'model_draft'),
+              ('Audit Model', 'model_audit'),
+              ('Repair Model', 'model_repair'),
+              ('Image Selection Model', 'model_image_selection'),
+            ] %}
+            {% for label, key in model_fields %}
+            <div class="col-md-6">
+              <label class="form-label small">{{ label }}</label>
+              <input type="text" name="{{ key }}" class="form-control form-control-sm"
+                     value="{{ settings.get(key,'') }}"
+                     placeholder="e.g. gpt-4o or deepseek/deepseek-v3" />
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-sliders me-2 text-primary"></i>Default Pipeline Limits</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label small">Max Repair Loops</label>
+              <input type="number" name="max_repair_loops" class="form-control form-control-sm"
+                     value="{{ settings.get('max_repair_loops','3') }}" min="0" max="10" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Max Model Calls</label>
+              <input type="number" name="max_model_calls" class="form-control form-control-sm"
+                     value="{{ settings.get('max_model_calls','15') }}" min="1" max="50" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Max Output Tokens</label>
+              <input type="number" name="max_output_tokens" class="form-control form-control-sm"
+                     value="{{ settings.get('max_output_tokens','8000') }}" min="1000" max="32000" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">
+        <i class="fa-solid fa-floppy-disk me-2"></i>Save Global Settings
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if user else 'New' }} User — Admin — LectureNote AI{% endblock %}
+{% block page_title %}{{ 'Edit User: ' + user.username if user else 'Create New User' }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <form method="POST">
+
+      <!-- Account info -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-user me-2"></i>Account Information</div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Username <span class="text-danger">*</span></label>
+              <input type="text" name="username" class="form-control"
+                     value="{{ user.username if user else '' }}" required autofocus />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Email</label>
+              <input type="email" name="email" class="form-control"
+                     value="{{ user.email if user else '' }}" placeholder="optional" />
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Password {% if not user %}<span class="text-danger">*</span>{% endif %}</label>
+              <input type="password" name="password" class="form-control"
+                     {% if not user %}required{% endif %}
+                     placeholder="{{ 'Leave blank to keep current' if user else 'Set a strong password' }}" />
+            </div>
+          </div>
+          <div class="mt-3 d-flex gap-4">
+            <div class="form-check">
+              <input type="checkbox" class="form-check-input" id="is_admin" name="is_admin"
+                     {% if user and user.is_admin %}checked{% endif %} />
+              <label class="form-check-label" for="is_admin">Admin</label>
+            </div>
+            <div class="form-check">
+              <input type="checkbox" class="form-check-input" id="is_active" name="is_active"
+                     {% if not user or user.is_active %}checked{% endif %} />
+              <label class="form-check-label" for="is_active">Active</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% if user %}
+      <!-- Model overrides for this user -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-robot me-2 text-info"></i>Model Overrides for this User</div>
+        <div class="card-body">
+          <p class="text-muted small mb-3">Override specific models for this user. Leave blank to use global defaults.</p>
+          <div class="row g-3">
+            {% set s = user.settings %}
+            {% set model_fields = [
+              ('Fallback Model', 'model_fallback', s.model_fallback if s else None, globals.get('model_fallback','')),
+              ('OCR Model', 'model_ocr', s.model_ocr if s else None, globals.get('model_ocr','')),
+              ('Checklist Model', 'model_checklist', s.model_checklist if s else None, globals.get('model_checklist','')),
+              ('Draft Model', 'model_draft', s.model_draft if s else None, globals.get('model_draft','')),
+              ('Audit Model', 'model_audit', s.model_audit if s else None, globals.get('model_audit','')),
+              ('Repair Model', 'model_repair', s.model_repair if s else None, globals.get('model_repair','')),
+            ] %}
+            {% for label, name, val, glob in model_fields %}
+            <div class="col-md-6">
+              <label class="form-label small">{{ label }}</label>
+              <input type="text" name="{{ name }}" class="form-control form-control-sm"
+                     value="{{ val or '' }}" placeholder="{{ glob or 'global default' }}" />
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Pipeline limits -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-sliders me-2 text-primary"></i>Pipeline Limits</div>
+        <div class="card-body">
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label small">Max Repair Loops</label>
+              <input type="number" name="max_repair_loops" class="form-control form-control-sm"
+                     value="{{ (s.max_repair_loops if s and s.max_repair_loops is not none else '') }}"
+                     placeholder="{{ globals.get('max_repair_loops','3') }}" min="0" max="10" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Max Model Calls</label>
+              <input type="number" name="max_model_calls" class="form-control form-control-sm"
+                     value="{{ (s.max_model_calls if s and s.max_model_calls is not none else '') }}"
+                     placeholder="{{ globals.get('max_model_calls','15') }}" min="1" max="50" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Max Output Tokens</label>
+              <input type="number" name="max_output_tokens" class="form-control form-control-sm"
+                     value="{{ (s.max_output_tokens if s and s.max_output_tokens is not none else '') }}"
+                     placeholder="{{ globals.get('max_output_tokens','8000') }}" min="1000" max="32000" />
+            </div>
+          </div>
+          <div class="form-check mb-2">
+            <input type="checkbox" class="form-check-input" id="fast_mode" name="fast_mode"
+                   {% if s and s.fast_mode %}checked{% endif %} />
+            <label class="form-check-label small" for="fast_mode">Fast Mode (skip audit &amp; repair)</label>
+          </div>
+          <div class="form-check">
+            <input type="checkbox" class="form-check-input" id="img_refine" name="enable_image_selection_refine"
+                   {% if not s or s.enable_image_selection_refine is none or s.enable_image_selection_refine %}checked{% endif %} />
+            <label class="form-check-label small" for="img_refine">Image Selection Refinement</label>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="fa-solid fa-floppy-disk me-2"></i>{{ 'Save Changes' if user else 'Create User' }}
+        </button>
+        <a href="{{ url_for('admin.users') }}" class="btn btn-outline-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Admin Overview — LectureNote AI{% endblock %}
+{% block page_title %}Admin Overview{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value text-primary">{{ total_users }}</div>
+      <div class="stat-label"><i class="fa-solid fa-users me-1"></i>Total Users</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value">{{ total_projects }}</div>
+      <div class="stat-label"><i class="fa-solid fa-file-lines me-1"></i>Total Projects</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value text-success">{{ completed }}</div>
+      <div class="stat-label"><i class="fa-solid fa-check me-1"></i>Completed</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value text-danger">{{ failed }}</div>
+      <div class="stat-label"><i class="fa-solid fa-xmark me-1"></i>Failed</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fa-solid fa-clock-rotate-left me-2"></i>Recent Projects</span>
+    <a href="{{ url_for('admin.users') }}" class="btn btn-sm btn-outline-primary">Manage Users</a>
+  </div>
+  {% if recent %}
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Course</th>
+          <th>User</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Tokens</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in recent %}
+        <tr>
+          <td>
+            <a href="{{ url_for('main.project', project_id=p.id) }}" class="text-decoration-none">
+              {{ p.course_name }}
+            </a>
+          </td>
+          <td class="text-muted">{{ p.user.username }}</td>
+          <td><span class="badge status-badge status-{{ p.status }}">{{ p.status }}</span></td>
+          <td class="text-muted small">{{ p.created_at.strftime('%b %d %H:%M') }}</td>
+          <td class="text-muted small">{{ '{:,}'.format(p.token_total or 0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-muted text-center py-4">No projects yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

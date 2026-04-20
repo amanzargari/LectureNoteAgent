@@ -10,9 +10,9 @@ COPY requirements.txt pyproject.toml README.md ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY src ./src
-COPY .env ./.env
+RUN pip install --no-deps -e .
 
 ENV PYTHONPATH=/app/src
-EXPOSE 8501
+EXPOSE 5000
 
-CMD ["streamlit", "run", "src/lecture_note_agent/ui.py", "--server.address=0.0.0.0", "--server.port=8501"]
+CMD ["slideagent-web", "--host", "0.0.0.0", "--port", "5000", "--data-dir", "/app/data"]

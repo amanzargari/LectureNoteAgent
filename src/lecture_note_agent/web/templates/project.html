@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block title %}{{ project.course_name }} — LectureNote AI{% endblock %}
+{% block page_title %}{{ project.course_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm btn-outline-secondary me-2">
+      <i class="fa-solid fa-arrow-left me-1"></i>Back
+    </a>
+    <span class="badge status-badge status-{{ project.status }} fs-6">
+      {% if project.status == 'completed' %}<i class="fa-solid fa-check me-1"></i>Completed
+      {% elif project.status == 'running' %}<i class="fa-solid fa-spinner fa-spin me-1"></i>Running
+      {% elif project.status == 'failed' %}<i class="fa-solid fa-xmark me-1"></i>Failed
+      {% else %}<i class="fa-solid fa-clock me-1"></i>Pending{% endif %}
+    </span>
+  </div>
+  <div class="d-flex gap-2">
+    {% if project.status == 'completed' and project.docx_path %}
+    <a href="{{ url_for('main.project_download', project_id=project.id) }}" class="btn btn-success">
+      <i class="fa-solid fa-file-word me-2"></i>Download DOCX
+    </a>
+    {% endif %}
+    <form method="POST" action="{{ url_for('main.project_delete', project_id=project.id) }}"
+          onsubmit="return confirm('Delete this project?')">
+      <button type="submit" class="btn btn-outline-danger" {% if project.status == 'running' %}disabled{% endif %}>
+        <i class="fa-solid fa-trash"></i>
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Progress section (running or pending) -->
+{% if project.status in ['pending', 'running'] %}
+<div class="card mb-4" id="progressCard">
+  <div class="card-body">
+    <h6 class="mb-3"><i class="fa-solid fa-gears me-2 text-primary"></i>Generating Notes…</h6>
+    <div class="progress mb-2" style="height:8px;">
+      <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+           id="progressBar" style="width: {{ project.progress_pct|round|int }}%"></div>
+    </div>
+    <div class="d-flex justify-content-between">
+      <span class="text-muted small" id="progressStage">{{ project.progress_stage or 'Starting pipeline…' }}</span>
+      <span class="text-muted small" id="progressPct">{{ project.progress_pct|round|int }}%</span>
+    </div>
+    <p class="text-muted small mt-2 mb-0" id="progressMsg"></p>
+  </div>
+</div>
+
+<script>
+const PROJECT_ID = {{ project.id }};
+const STATUS_URL = "{{ url_for('main.project_status', project_id=project.id) }}";
+let pollInterval;
+
+const STAGE_LABELS = {
+  ingest: 'Parsing slides and transcript…',
+  ocr: 'Running OCR on PDF…',
+  bundle: 'Building source bundle…',
+  checklist: 'Generating coverage checklist…',
+  draft: 'Drafting lecture notes…',
+  'image-refine': 'Refining image placement…',
+  audit: 'Auditing coverage…',
+  repair: 'Repairing missing content…',
+  're-audit': 'Re-auditing after repair…',
+  write: 'Writing DOCX output…',
+  done: 'Finishing up…',
+};
+
+function poll() {
+  fetch(STATUS_URL)
+    .then(r => r.json())
+    .then(data => {
+      const pct = Math.round(data.pct || 0);
+      document.getElementById('progressBar').style.width = pct + '%';
+      document.getElementById('progressPct').textContent = pct + '%';
+      document.getElementById('progressStage').textContent = STAGE_LABELS[data.stage] || data.stage || 'Running…';
+      document.getElementById('progressMsg').textContent = data.message || '';
+
+      if (data.status === 'completed' || data.status === 'failed') {
+        clearInterval(pollInterval);
+        location.reload();
+      }
+    })
+    .catch(() => {});
+}
+
+pollInterval = setInterval(poll, 2000);
+poll();
+</script>
+{% endif %}
+
+<!-- Error section -->
+{% if project.status == 'failed' %}
+<div class="alert alert-danger">
+  <h6><i class="fa-solid fa-circle-xmark me-2"></i>Generation Failed</h6>
+  <pre class="mb-0 small">{{ project.error_message }}</pre>
+</div>
+{% endif %}
+
+<!-- Completed results -->
+{% if project.status == 'completed' %}
+<!-- Stats row -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value">{{ project.model_calls or 0 }}</div>
+      <div class="stat-label"><i class="fa-solid fa-bolt text-warning me-1"></i>Model Calls</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value">{{ '{:,}'.format(project.token_total or 0) }}</div>
+      <div class="stat-label"><i class="fa-solid fa-coins text-info me-1"></i>Total Tokens</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value">{{ '{:,}'.format(project.token_prompt or 0) }}</div>
+      <div class="stat-label"><i class="fa-solid fa-arrow-right-to-bracket text-muted me-1"></i>Prompt</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value">{{ '%.0f'|format(project.elapsed_seconds or 0) }}s</div>
+      <div class="stat-label"><i class="fa-regular fa-clock text-muted me-1"></i>Elapsed</div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-3" id="resultTabs">
+  <li class="nav-item">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#notesTab">
+      <i class="fa-solid fa-file-lines me-2"></i>Notes
+    </button>
+  </li>
+  {% if audit %}
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#auditTab">
+      <i class="fa-solid fa-clipboard-check me-2"></i>Audit
+      {% if audit.pass %}
+      <span class="badge bg-success ms-1">Pass</span>
+      {% else %}
+      <span class="badge bg-warning text-dark ms-1">Review</span>
+      {% endif %}
+    </button>
+  </li>
+  {% endif %}
+  {% if project.checklist_markdown %}
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#checklistTab">
+      <i class="fa-solid fa-list-check me-2"></i>Checklist
+    </button>
+  </li>
+  {% endif %}
+</ul>
+
+<div class="tab-content">
+  <div class="tab-pane fade show active" id="notesTab">
+    <div class="card">
+      <div class="card-body">
+        <div class="notes-preview">{{ project.notes_markdown }}</div>
+      </div>
+    </div>
+  </div>
+
+  {% if audit %}
+  <div class="tab-pane fade" id="auditTab">
+    <div class="row g-3 mb-3">
+      <div class="col-md-4">
+        <div class="stat-card">
+          <div class="stat-value {% if (audit.coverage_percent or 0) >= 95 %}text-success{% else %}text-warning{% endif %}">
+            {{ audit.coverage_percent or 0 }}%
+          </div>
+          <div class="stat-label">Coverage</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="stat-card">
+          <div class="stat-value text-danger">{{ (audit.missing_items or [])|length }}</div>
+          <div class="stat-label">Missing Items</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="stat-card">
+          <div class="stat-value text-warning">{{ (audit.weak_items or [])|length }}</div>
+          <div class="stat-label">Weak Items</div>
+        </div>
+      </div>
+    </div>
+    {% if audit.missing_items %}
+    <div class="card mb-3">
+      <div class="card-header text-danger"><i class="fa-solid fa-circle-xmark me-2"></i>Missing Items</div>
+      <ul class="list-group list-group-flush">
+        {% for item in audit.missing_items %}
+        <li class="list-group-item">{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if audit.weak_items %}
+    <div class="card mb-3">
+      <div class="card-header text-warning"><i class="fa-solid fa-triangle-exclamation me-2"></i>Weak Items</div>
+      <ul class="list-group list-group-flush">
+        {% for item in audit.weak_items %}
+        <li class="list-group-item">{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if audit.issues %}
+    <div class="card">
+      <div class="card-header text-muted"><i class="fa-solid fa-circle-info me-2"></i>Issues</div>
+      <ul class="list-group list-group-flush">
+        {% for issue in audit.issues %}
+        <li class="list-group-item text-muted small">{{ issue }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if project.checklist_markdown %}
+  <div class="tab-pane fade" id="checklistTab">
+    <div class="card">
+      <div class="card-body">
+        <pre class="checklist-pre">{{ project.checklist_markdown }}</pre>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

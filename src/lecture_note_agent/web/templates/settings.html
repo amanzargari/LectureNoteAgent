@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Settings — LectureNote AI{% endblock %}
+{% block page_title %}My Settings{% endblock %}
+
+{% macro field(label, name, value, placeholder='', help='', type='text') %}
+<div class="mb-3">
+  <label class="form-label">{{ label }}</label>
+  <input type="{{ type }}" name="{{ name }}" class="form-control"
+         value="{{ value or '' }}" placeholder="{{ placeholder }}" />
+  {% if help %}<div class="form-text text-muted">{{ help }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <form method="POST" action="{{ url_for('main.settings') }}">
+
+      <!-- API credentials -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-key me-2 text-warning"></i>API Credentials</div>
+        <div class="card-body">
+          <p class="text-muted small">Leave blank to use the global defaults set by your admin.</p>
+          {{ field('API Key', 'api_key', settings.api_key, 'sk-…', type='password') }}
+          {{ field('Base URL', 'api_base_url', settings.api_base_url,
+                   globals.get('api_base_url','https://api.openai.com/v1'),
+                   'OpenAI-compatible endpoint (supports OpenRouter, etc.)') }}
+        </div>
+      </div>
+
+      <!-- Model overrides -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-robot me-2 text-info"></i>Model Overrides</div>
+        <div class="card-body">
+          <p class="text-muted small">Leave blank to use the admin-configured global defaults.</p>
+          <div class="row g-3">
+            {% set model_fields = [
+              ('Fallback Model', 'model_fallback', settings.model_fallback, globals.get('model_fallback','')),
+              ('OCR Model', 'model_ocr', settings.model_ocr, globals.get('model_ocr','')),
+              ('Checklist Model', 'model_checklist', settings.model_checklist, globals.get('model_checklist','')),
+              ('Draft Model', 'model_draft', settings.model_draft, globals.get('model_draft','')),
+              ('Audit Model', 'model_audit', settings.model_audit, globals.get('model_audit','')),
+              ('Repair Model', 'model_repair', settings.model_repair, globals.get('model_repair','')),
+              ('Image Selection Model', 'model_image_selection', settings.model_image_selection, globals.get('model_image_selection','')),
+            ] %}
+            {% for label, name, val, glob in model_fields %}
+            <div class="col-md-6">
+              <label class="form-label small">{{ label }}</label>
+              <input type="text" name="{{ name }}" class="form-control form-control-sm"
+                     value="{{ val or '' }}" placeholder="{{ glob or 'global default' }}" />
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Pipeline settings -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-sliders me-2 text-primary"></i>Pipeline Settings</div>
+        <div class="card-body">
+          <div class="row g-3 mb-3">
+            <div class="col-md-4">
+              <label class="form-label small">Max Repair Loops</label>
+              <input type="number" name="max_repair_loops" class="form-control form-control-sm"
+                     value="{{ settings.max_repair_loops or '' }}"
+                     placeholder="{{ globals.get('max_repair_loops','3') }}" min="0" max="10" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Max Model Calls</label>
+              <input type="number" name="max_model_calls" class="form-control form-control-sm"
+                     value="{{ settings.max_model_calls or '' }}"
+                     placeholder="{{ globals.get('max_model_calls','15') }}" min="1" max="50" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Max Output Tokens</label>
+              <input type="number" name="max_output_tokens" class="form-control form-control-sm"
+                     value="{{ settings.max_output_tokens or '' }}"
+                     placeholder="{{ globals.get('max_output_tokens','8000') }}" min="1000" max="32000" />
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">OCR Mode</label>
+            <select name="ocr_mode" class="form-select form-select-sm" style="max-width:180px;">
+              {% for opt in ['auto','whole','page'] %}
+              <option value="{{ opt }}" {% if (settings.ocr_mode or 'auto') == opt %}selected{% endif %}>{{ opt }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-check mb-2">
+            <input type="checkbox" class="form-check-input" id="fast_mode" name="fast_mode"
+                   {% if settings.fast_mode %}checked{% endif %} />
+            <label class="form-check-label" for="fast_mode">
+              Fast Mode <span class="text-muted small">(skip audit &amp; repair)</span>
+            </label>
+          </div>
+          <div class="form-check">
+            <input type="checkbox" class="form-check-input" id="image_refine" name="enable_image_selection_refine"
+                   {% if settings.enable_image_selection_refine is none or settings.enable_image_selection_refine %}checked{% endif %} />
+            <label class="form-check-label" for="image_refine">
+              Image Selection Refinement <span class="text-muted small">(extra LLM pass to improve figure placement)</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary">
+        <i class="fa-solid fa-floppy-disk me-2"></i>Save Settings
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}
