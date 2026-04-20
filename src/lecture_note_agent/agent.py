@@ -36,6 +36,9 @@ class LectureNoteAgent:
         self._prompt_tokens = 0
         self._completion_tokens = 0
         self._total_tokens = 0
+        # Per-model tracking: {model: {phase, prompt_tokens, completion_tokens}}
+        self._model_usage: dict[str, dict] = {}
+        self._current_phase: str = "unknown"
 
     def _emit_progress(
         self,
@@ -45,6 +48,7 @@ class LectureNoteAgent:
         current: int,
         total: int,
     ) -> None:
+        self._current_phase = stage
         if callback is None:
             return
         callback(
@@ -63,7 +67,7 @@ class LectureNoteAgent:
                 "Increase MAX_MODEL_CALLS only if needed."
             )
 
-    def _accumulate_usage(self, usage: object) -> None:
+    def _accumulate_usage(self, usage: object, model: str | None = None) -> None:
         if usage is None:
             return
 
@@ -78,9 +82,21 @@ class LectureNoteAgent:
         if total is None:
             total = (prompt or 0) + (completion or 0)
 
-        self._prompt_tokens += int(prompt or 0)
-        self._completion_tokens += int(completion or 0)
-        self._total_tokens += int(total or 0)
+        p = int(prompt or 0)
+        c = int(completion or 0)
+        t = int(total or 0)
+
+        self._prompt_tokens += p
+        self._completion_tokens += c
+        self._total_tokens += t
+
+        # Per-model tracking
+        resolved = (model or self.config.model).strip()
+        if resolved not in self._model_usage:
+            self._model_usage[resolved] = {"phases": set(), "prompt_tokens": 0, "completion_tokens": 0}
+        self._model_usage[resolved]["phases"].add(self._current_phase)
+        self._model_usage[resolved]["prompt_tokens"] += p
+        self._model_usage[resolved]["completion_tokens"] += c
 
     def _chat_once(
         self,
@@ -133,7 +149,7 @@ class LectureNoteAgent:
             timeout=timeout_seconds,
             messages=msgs,
         )
-        self._accumulate_usage(getattr(response, "usage", None))
+        self._accumulate_usage(getattr(response, "usage", None), model=resolved_model)
         choice = response.choices[0]
         content = choice.message.content or ""
         finish_reason = getattr(choice, "finish_reason", None)
@@ -240,7 +256,7 @@ class LectureNoteAgent:
                     }
                 ],
             )
-            self._accumulate_usage(getattr(response, "usage", None))
+            self._accumulate_usage(getattr(response, "usage", None), model=resolved_model)
             return self._extract_response_text(response)
         except Exception:
             return ""
@@ -473,9 +489,11 @@ class LectureNoteAgent:
         transcript = parse_transcript(transcript_path)
         source = SourceBundle(course_name=course_name, slides=slides, transcript=transcript)
 
+        slide_weight = float(getattr(self.config, "slide_weight", 0.6) or 0.6)
+
         step += 1
         self._emit_progress(progress_callback, "source", "Building source payload", step, estimated_steps)
-        source_payload = build_source_payload(course_name, slides, transcript)
+        source_payload = build_source_payload(course_name, slides, transcript, slide_weight=slide_weight)
 
         step += 1
         self._emit_progress(progress_callback, "checklist", "Generating coverage checklist", step, estimated_steps)
@@ -712,6 +730,16 @@ class LectureNoteAgent:
             estimated_steps,
         )
 
+        # Serialize model_usage (sets are not JSON-serializable)
+        serialized_usage = {
+            m: {
+                "phases": sorted(v["phases"]),
+                "prompt_tokens": v["prompt_tokens"],
+                "completion_tokens": v["completion_tokens"],
+            }
+            for m, v in self._model_usage.items()
+        }
+
         return GenerationArtifacts(
             checklist_markdown=checklist_md,
             draft_markdown=notes_md,
@@ -721,4 +749,5 @@ class LectureNoteAgent:
             prompt_tokens=self._prompt_tokens,
             completion_tokens=self._completion_tokens,
             total_tokens=self._total_tokens,
+            model_usage=serialized_usage,
         )

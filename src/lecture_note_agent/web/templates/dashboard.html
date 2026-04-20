@@ -52,6 +52,9 @@
         <div class="project-stats">
           <span title="Model calls"><i class="fa-solid fa-bolt text-warning"></i> {{ p.model_calls }}</span>
           <span title="Total tokens"><i class="fa-solid fa-coins text-info"></i> {{ '{:,}'.format(p.token_total or 0) }}</span>
+          {% if p.cost_usd %}
+          <span title="Estimated cost" class="text-success"><i class="fa-solid fa-dollar-sign"></i> {{ '%.4f'|format(p.cost_usd) }}</span>
+          {% endif %}
           {% if p.elapsed_seconds %}
           <span title="Elapsed"><i class="fa-regular fa-clock text-muted"></i> {{ '%.0f'|format(p.elapsed_seconds) }}s</span>
           {% endif %}

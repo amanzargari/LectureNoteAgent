@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ target_user.username }}'s Projects — Admin — LectureNote AI{% endblock %}
+{% block page_title %}{{ target_user.username }}'s Projects{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <a href="{{ url_for('admin.users') }}" class="btn btn-sm btn-outline-secondary me-2">
+      <i class="fa-solid fa-arrow-left me-1"></i>Back to Users
+    </a>
+    <span class="text-muted small">{{ projects|length }} project{{ 's' if projects|length != 1 }}</span>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <div class="avatar-sm">{{ target_user.username[0].upper() }}</div>
+    <span class="fw-semibold">{{ target_user.username }}</span>
+    {% if target_user.email %}<span class="text-muted small">— {{ target_user.email }}</span>{% endif %}
+  </div>
+</div>
+
+{% if not projects %}
+<div class="card"><div class="card-body text-muted text-center py-4">No projects for this user.</div></div>
+{% else %}
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Course</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Tokens</th>
+          <th>Cost</th>
+          <th>Files</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in projects %}
+        <tr>
+          <td>{{ p.course_name }}</td>
+          <td><span class="badge status-badge status-{{ p.status }}">{{ p.status }}</span></td>
+          <td class="text-muted small">{{ p.created_at.strftime('%b %d, %Y %H:%M') }}</td>
+          <td class="text-muted small">{{ '{:,}'.format(p.token_total or 0) }}</td>
+          <td class="text-success small">{% if p.cost_usd %}${{ '%.4f'|format(p.cost_usd) }}{% else %}—{% endif %}</td>
+          <td class="text-muted small">
+            {% if p.slides_filename %}<span class="badge bg-secondary me-1" title="Slides">S</span>{% endif %}
+            {% if p.transcript_filename %}<span class="badge bg-secondary" title="Transcript">T</span>{% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <a href="{{ url_for('main.project', project_id=p.id) }}" class="btn btn-sm btn-outline-primary">
+                <i class="fa-solid fa-eye"></i>
+              </a>
+              {% if p.status == 'completed' and p.docx_path %}
+              <a href="{{ url_for('main.project_download', project_id=p.id) }}" class="btn btn-sm btn-outline-success" title="Download DOCX">
+                <i class="fa-solid fa-file-word"></i>
+              </a>
+              {% endif %}
+              {% if p.status == 'completed' and p.pdf_path %}
+              <a href="{{ url_for('main.project_download_pdf', project_id=p.id) }}" class="btn btn-sm btn-outline-danger" title="Download PDF">
+                <i class="fa-solid fa-file-pdf"></i>
+              </a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

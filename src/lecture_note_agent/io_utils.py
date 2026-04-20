@@ -443,8 +443,16 @@ def _collapse_build_sequences(slides: List[SlideUnit]) -> List[dict]:
 
     return groups
 
-def build_source_payload(course_name: str, slides: List[SlideUnit], transcript: List[TranscriptSegment]) -> str:
+def build_source_payload(
+    course_name: str,
+    slides: List[SlideUnit],
+    transcript: List[TranscriptSegment],
+    slide_weight: float = 0.6,
+) -> str:
     groups = _collapse_build_sequences(slides)
+    transcript_weight = round(1.0 - max(0.0, min(1.0, slide_weight)), 2)
+    slide_weight_pct = round(max(0.0, min(1.0, slide_weight)) * 100)
+    transcript_weight_pct = 100 - slide_weight_pct
 
     slide_blocks: list[str] = []
     for g in groups:
@@ -477,8 +485,14 @@ def build_source_payload(course_name: str, slides: List[SlideUnit], transcript: 
         for t in transcript
     ]
 
+    weight_note = (
+        f"[SOURCE WEIGHT: slides={slide_weight_pct}% / transcript={transcript_weight_pct}% — "
+        "allocate your attention and detail accordingly across both sources]"
+    )
+
     payload = (
-        f"Course: {course_name}\n\n"
+        f"Course: {course_name}\n"
+        f"{weight_note}\n\n"
         f"## Slides ({len(groups)} topic groups from {len(slides)} raw slides)\n"
         + "\n\n".join(slide_blocks)
         + "\n\n"

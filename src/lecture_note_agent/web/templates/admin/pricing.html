@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Model Pricing — Admin — LectureNote AI{% endblock %}
+{% block page_title %}Model Pricing{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <p class="text-muted mb-0">Prices in USD per 1M tokens. Used for cost estimation on all projects.</p>
+  <a href="{{ url_for('admin.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="fa-solid fa-arrow-left me-1"></i>Back
+  </a>
+</div>
+
+<!-- Add new pricing row -->
+<div class="card mb-4">
+  <div class="card-header"><i class="fa-solid fa-plus me-2 text-success"></i>Add / Update Model Pricing</div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('admin.pricing') }}" class="row g-3 align-items-end">
+      <input type="hidden" name="action" value="add" />
+      <div class="col-md-5">
+        <label class="form-label small">Model Name</label>
+        <input type="text" name="model_name" class="form-control form-control-sm"
+               placeholder="e.g. openai/gpt-4o or anthropic/claude-3.5-sonnet" required />
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Input ($/1M tokens)</label>
+        <input type="number" name="input_per_1m" class="form-control form-control-sm" step="0.0001" min="0" value="0" required />
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Output ($/1M tokens)</label>
+        <input type="number" name="output_per_1m" class="form-control form-control-sm" step="0.0001" min="0" value="0" required />
+      </div>
+      <div class="col-md-1">
+        <button type="submit" class="btn btn-success btn-sm w-100">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Pricing table -->
+<div class="card">
+  <div class="card-header"><i class="fa-solid fa-table me-2"></i>Current Pricing</div>
+  {% if prices %}
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Input ($/1M)</th>
+          <th>Output ($/1M)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in prices %}
+        <tr>
+          <td class="font-monospace small">{{ p.model_name }}</td>
+          <td class="text-muted small">${{ '%.4f'|format(p.input_per_1m) }}</td>
+          <td class="text-muted small">${{ '%.4f'|format(p.output_per_1m) }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('admin.pricing') }}"
+                  onsubmit="return confirm('Delete pricing for {{ p.model_name }}?')" class="d-inline">
+              <input type="hidden" name="action" value="delete" />
+              <input type="hidden" name="id" value="{{ p.id }}" />
+              <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fa-solid fa-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body text-muted text-center py-4">No pricing configured yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

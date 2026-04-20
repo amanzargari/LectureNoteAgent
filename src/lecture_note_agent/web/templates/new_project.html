@@ -53,6 +53,22 @@
             </div>
           </div>
 
+          <div class="mb-4">
+            <label class="form-label small">
+              Source Weight: Slides vs Transcript
+              <span class="text-muted ms-1" id="weightLabel">60% slides / 40% transcript</span>
+            </label>
+            <input type="range" class="form-range" name="slide_weight" id="slideWeightNew"
+                   min="0" max="1" step="0.05" value="0.6"
+                   oninput="document.getElementById('weightLabel').textContent = Math.round(this.value*100)+'% slides / '+Math.round((1-this.value)*100)+'% transcript'" />
+            <div class="d-flex justify-content-between">
+              <span class="text-muted small">Transcript only</span>
+              <span class="text-muted small">Balanced</span>
+              <span class="text-muted small">Slides only</span>
+            </div>
+            <div class="form-text">Leave at default to use your saved setting. Adjust here to override for this project only.</div>
+          </div>
+
           <div class="d-flex gap-2">
             <button type="submit" class="btn btn-primary" id="submitBtn">
               <i class="fa-solid fa-wand-magic-sparkles me-2"></i>Generate Notes
@@ -82,7 +98,10 @@
 function setupUploadZone(zoneId, inputId) {
   const zone = document.getElementById(zoneId);
   const input = document.getElementById(inputId);
-  zone.addEventListener('click', () => input.click());
+  // The input covers the whole zone (position:absolute inset:0), so native clicks
+  // already reach it. Only programmatically trigger click for non-input targets
+  // (e.g. drag-and-drop label area) to avoid opening two file dialogs.
+  zone.addEventListener('click', (e) => { if (e.target !== input) input.click(); });
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
   zone.addEventListener('drop', e => {

@@ -106,22 +106,28 @@ poll();
 {% if project.status == 'completed' %}
 <!-- Stats row -->
 <div class="row g-3 mb-4">
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-2">
     <div class="stat-card">
       <div class="stat-value">{{ project.model_calls or 0 }}</div>
       <div class="stat-label"><i class="fa-solid fa-bolt text-warning me-1"></i>Model Calls</div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-2">
     <div class="stat-card">
       <div class="stat-value">{{ '{:,}'.format(project.token_total or 0) }}</div>
       <div class="stat-label"><i class="fa-solid fa-coins text-info me-1"></i>Total Tokens</div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-2">
     <div class="stat-card">
       <div class="stat-value">{{ '{:,}'.format(project.token_prompt or 0) }}</div>
       <div class="stat-label"><i class="fa-solid fa-arrow-right-to-bracket text-muted me-1"></i>Prompt</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="stat-value text-success">${{ '%.4f'|format(project.cost_usd or 0) }}</div>
+      <div class="stat-label"><i class="fa-solid fa-dollar-sign text-success me-1"></i>Est. Cost</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
@@ -131,6 +137,28 @@ poll();
     </div>
   </div>
 </div>
+
+{% if model_usage %}
+<div class="card mb-4">
+  <div class="card-header"><i class="fa-solid fa-chart-bar me-2 text-info"></i>Per-Model Cost Breakdown</div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead><tr><th>Model</th><th>Phases</th><th>Prompt Tokens</th><th>Completion Tokens</th><th>Est. Cost</th></tr></thead>
+      <tbody>
+        {% for item in model_usage %}
+        <tr>
+          <td class="font-monospace small">{{ item.model }}</td>
+          <td class="text-muted small">{{ item.phases | join(', ') }}</td>
+          <td class="text-muted small">{{ '{:,}'.format(item.prompt_tokens) }}</td>
+          <td class="text-muted small">{{ '{:,}'.format(item.completion_tokens) }}</td>
+          <td class="text-success small">{% if item.cost_usd is not none %}${{ '%.4f'|format(item.cost_usd) }}{% else %}<span class="text-muted">no pricing</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 <!-- Tabs -->
 <ul class="nav nav-tabs mb-3" id="resultTabs">

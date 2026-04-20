@@ -100,6 +100,24 @@
               Image Selection Refinement <span class="text-muted small">(extra LLM pass to improve figure placement)</span>
             </label>
           </div>
+
+          <!-- Slide vs Transcript weight -->
+          <div class="mt-3">
+            <label class="form-label small">
+              Source Weight: Slides vs Transcript
+              <span class="text-muted ms-1" id="weightLabel">{{ '%.0f'|format((settings.slide_weight or 0.6) * 100) }}% slides / {{ '%.0f'|format((1 - (settings.slide_weight or 0.6)) * 100) }}% transcript</span>
+            </label>
+            <input type="range" class="form-range" name="slide_weight" id="slideWeight"
+                   min="0" max="1" step="0.05"
+                   value="{{ settings.slide_weight or 0.6 }}"
+                   oninput="document.getElementById('weightLabel').textContent = Math.round(this.value*100)+'% slides / '+Math.round((1-this.value)*100)+'% transcript'" />
+            <div class="d-flex justify-content-between">
+              <span class="text-muted small">Transcript only</span>
+              <span class="text-muted small">Balanced</span>
+              <span class="text-muted small">Slides only</span>
+            </div>
+            <div class="form-text">Controls how much emphasis the AI places on slide content vs transcript when writing notes.</div>
+          </div>
         </div>
       </div>
 

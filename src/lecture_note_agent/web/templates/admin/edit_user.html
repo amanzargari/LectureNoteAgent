@@ -105,6 +105,34 @@
                    {% if not s or s.enable_image_selection_refine is none or s.enable_image_selection_refine %}checked{% endif %} />
             <label class="form-check-label small" for="img_refine">Image Selection Refinement</label>
           </div>
+          <div class="mt-3">
+            <label class="form-label small">
+              Source Weight: Slides vs Transcript
+              <span class="text-muted ms-1" id="adminWeightLabel">{{ '%.0f'|format(((s.slide_weight if s and s.slide_weight is not none else 0.6) or 0.6) * 100) }}% slides / {{ '%.0f'|format((1 - ((s.slide_weight if s and s.slide_weight is not none else 0.6) or 0.6)) * 100) }}% transcript</span>
+            </label>
+            <input type="range" class="form-range" name="slide_weight" id="adminSlideWeight"
+                   min="0" max="1" step="0.05"
+                   value="{{ (s.slide_weight if s and s.slide_weight is not none else 0.6) or 0.6 }}"
+                   oninput="document.getElementById('adminWeightLabel').textContent = Math.round(this.value*100)+'% slides / '+Math.round((1-this.value)*100)+'% transcript'" />
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if user %}
+      <!-- User's recent projects summary -->
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="fa-solid fa-folder-open me-2"></i>User's Projects</span>
+          <a href="{{ url_for('admin.user_projects', user_id=user.id) }}" class="btn btn-sm btn-outline-secondary">
+            View All
+          </a>
+        </div>
+        <div class="card-body text-muted small">
+          {{ user.projects|length }} project{{ 's' if user.projects|length != 1 }}
+          {% if user.projects %}
+          — last: {{ user.projects|sort(attribute='created_at', reverse=True)|first|attr('course_name') }}
+          {% endif %}
         </div>
       </div>
       {% endif %}

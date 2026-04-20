@@ -34,3 +34,5 @@ class GenerationArtifacts(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    # {model_name: {phases, prompt_tokens, completion_tokens}}
+    model_usage: dict = Field(default_factory=dict)

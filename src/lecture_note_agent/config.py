@@ -39,6 +39,8 @@ class AgentConfig:
     enable_image_selection_refine: bool = _env_bool("ENABLE_IMAGE_SELECTION_REFINE", True)
     fast_mode: bool = _env_bool("FAST_MODE", False)
     pdf_ocr_mode: str = os.getenv("PDF_OCR_MODE", "auto")
+    # 0.0 = weight transcript fully, 1.0 = weight slides fully (default 0.6)
+    slide_weight: float = float(os.getenv("SLIDE_WEIGHT", "0.6"))
 
 
 def ensure_api_key(config: AgentConfig) -> None:

@@ -20,7 +20,8 @@ from flask import (
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
-from .database import GlobalSettings, Project, UserSettings, db
+from .database import GlobalSettings, ModelPricing, Project, UserSettings, db
+from . import storage as _storage
 
 main_bp = Blueprint("main", __name__)
 
@@ -61,6 +62,8 @@ def _build_agent_config(user):
         g = _get_global(global_key)
         return int(g) if g else default
 
+    slide_weight = float(s.slide_weight) if s and s.slide_weight is not None else 0.6
+
     return AgentConfig(
         api_key=api_key,
         base_url=base_url,
@@ -79,7 +82,19 @@ def _build_agent_config(user):
             s.enable_image_selection_refine if s and s.enable_image_selection_refine is not None else True
         ),
         pdf_ocr_mode=s.ocr_mode if s and s.ocr_mode else "auto",
+        slide_weight=slide_weight,
     )
+
+
+def _calculate_cost(model_usage: dict) -> float:
+    """Calculate total USD cost from per-model usage dict using ModelPricing table."""
+    total = 0.0
+    for model_name, usage in model_usage.items():
+        pricing = ModelPricing.query.filter_by(model_name=model_name).first()
+        if pricing:
+            total += (usage.get("prompt_tokens", 0) / 1_000_000) * pricing.input_per_1m
+            total += (usage.get("completion_tokens", 0) / 1_000_000) * pricing.output_per_1m
+    return total
 
 
 def _run_project_bg(app, project_id: int, slides_path: str, transcript_path: str,
@@ -127,13 +142,28 @@ def _run_project_bg(app, project_id: int, slides_path: str, transcript_path: str
                 row.checklist_markdown = artifacts.checklist_markdown
                 row.audit_json = artifacts.audit_json
                 row.docx_path = output_path
-                row.pdf_path = str(Path(output_path).with_suffix(".pdf"))
+                pdf_path_str = str(Path(output_path).with_suffix(".pdf"))
+                row.pdf_path = pdf_path_str
                 row.token_prompt = artifacts.prompt_tokens
                 row.token_completion = artifacts.completion_tokens
                 row.token_total = artifacts.total_tokens
                 row.model_calls = artifacts.model_calls
                 row.elapsed_seconds = elapsed
                 row.progress_pct = 100.0
+                row.model_usage_json = json.dumps(artifacts.model_usage)
+                row.cost_usd = _calculate_cost(artifacts.model_usage)
+
+                # Upload outputs to MinIO if enabled
+                if _storage.is_minio_enabled():
+                    uid = row.user_id
+                    pid = row.id
+                    if Path(output_path).exists():
+                        k = _storage.make_object_key(uid, pid, "lecture_notes.docx", "outputs")
+                        row.docx_object_key = _storage.upload_file(output_path, k)
+                    if Path(pdf_path_str).exists():
+                        k = _storage.make_object_key(uid, pid, "lecture_notes.pdf", "outputs")
+                        row.pdf_object_key = _storage.upload_file(pdf_path_str, k)
+
                 db.session.commit()
 
         except Exception as exc:
@@ -200,12 +230,18 @@ def new_project():
         slides_path = str(upload_dir / slides_filename)
         slides_file.save(slides_path)
         project.slides_filename = slides_filename
+        if _storage.is_minio_enabled():
+            key = _storage.make_object_key(current_user.id, project.id, slides_filename, "uploads")
+            project.slides_object_key = _storage.upload_file(slides_path, key)
 
         if transcript_file and transcript_file.filename:
             transcript_filename = secure_filename(transcript_file.filename)
             transcript_path = str(upload_dir / transcript_filename)
             transcript_file.save(transcript_path)
             project.transcript_filename = transcript_filename
+            if _storage.is_minio_enabled():
+                key = _storage.make_object_key(current_user.id, project.id, transcript_filename, "uploads")
+                project.transcript_object_key = _storage.upload_file(transcript_path, key)
         else:
             transcript_path = str(upload_dir / "_empty.txt")
             Path(transcript_path).write_text("")
@@ -216,6 +252,13 @@ def new_project():
         output_path = str(output_dir / "lecture_notes.docx")
         artifacts_dir = str(output_dir / "artifacts")
         config = _build_agent_config(current_user)
+        # Per-project weight override (if form provided one)
+        try:
+            form_weight = float(request.form.get("slide_weight", ""))
+            from dataclasses import replace as dc_replace
+            config = dc_replace(config, slide_weight=max(0.0, min(1.0, form_weight)))
+        except (ValueError, TypeError):
+            pass
 
         thread = threading.Thread(
             target=_run_project_bg,
@@ -241,14 +284,45 @@ def new_project():
 @main_bp.route("/project/<int:project_id>")
 @login_required
 def project(project_id: int):
-    p = Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+    if current_user.is_admin:
+        p = Project.query.get_or_404(project_id)
+    else:
+        p = Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
     audit_data = None
     if p.audit_json:
         try:
             audit_data = json.loads(p.audit_json)
         except Exception:
             pass
-    return render_template("project.html", project=p, audit=audit_data)
+    model_usage = _parse_model_usage(p)
+    return render_template("project.html", project=p, audit=audit_data, model_usage=model_usage)
+
+
+def _parse_model_usage(p: Project) -> list[dict]:
+    """Parse model_usage_json and enrich with per-model cost from pricing table."""
+    if not p.model_usage_json:
+        return []
+    try:
+        raw: dict = json.loads(p.model_usage_json)
+    except Exception:
+        return []
+    result = []
+    for model_name, usage in raw.items():
+        pricing = ModelPricing.query.filter_by(model_name=model_name).first()
+        cost_usd = None
+        if pricing:
+            cost_usd = (
+                (usage.get("prompt_tokens", 0) / 1_000_000) * pricing.input_per_1m
+                + (usage.get("completion_tokens", 0) / 1_000_000) * pricing.output_per_1m
+            )
+        result.append({
+            "model": model_name,
+            "phases": usage.get("phases", []),
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "cost_usd": cost_usd,
+        })
+    return result
 
 
 @main_bp.route("/project/<int:project_id>/status")
@@ -268,10 +342,17 @@ def project_status(project_id: int):
     )
 
 
+def _get_project_for_user(project_id: int) -> "Project":
+    """Return project; admins can access any project."""
+    if current_user.is_admin:
+        return Project.query.get_or_404(project_id)
+    return Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+
+
 @main_bp.route("/project/<int:project_id>/download")
 @login_required
 def project_download(project_id: int):
-    p = Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+    p = _get_project_for_user(project_id)
     if p.status != "completed" or not p.docx_path or not Path(p.docx_path).exists():
         flash("Download not available.", "danger")
         return redirect(url_for("main.project", project_id=project_id))
@@ -282,7 +363,7 @@ def project_download(project_id: int):
 @main_bp.route("/project/<int:project_id>/download_pdf")
 @login_required
 def project_download_pdf(project_id: int):
-    p = Project.query.filter_by(id=project_id, user_id=current_user.id).first_or_404()
+    p = _get_project_for_user(project_id)
     if p.status != "completed" or not getattr(p, "pdf_path", None) or not Path(p.pdf_path).exists():
         flash("PDF Download not available.", "danger")
         return redirect(url_for("main.project", project_id=project_id))
@@ -330,11 +411,13 @@ def settings():
             raw_loops = request.form.get("max_repair_loops", "").strip()
             raw_calls = request.form.get("max_model_calls", "").strip()
             raw_tokens = request.form.get("max_output_tokens", "").strip()
+            raw_weight = request.form.get("slide_weight", "0.6").strip()
             s.max_repair_loops = int(raw_loops) if raw_loops else None
             s.max_model_calls = int(raw_calls) if raw_calls else None
             s.max_output_tokens = int(raw_tokens) if raw_tokens else None
+            s.slide_weight = max(0.0, min(1.0, float(raw_weight))) if raw_weight else 0.6
         except ValueError:
-            flash("Max loops/calls/tokens must be integers.", "danger")
+            flash("Max loops/calls/tokens must be integers; slide weight must be 0–1.", "danger")
             return redirect(url_for("main.settings"))
 
         db.session.commit()

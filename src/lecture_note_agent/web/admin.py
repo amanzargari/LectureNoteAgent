@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import json
+import os
 from functools import wraps
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
-from flask_login import current_user, login_required
+import urllib.request
+import urllib.error
 
-from .database import GlobalSettings, Project, User, UserSettings, db
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+from sqlalchemy import func
+
+from .database import GlobalSettings, ModelPricing, Project, User, UserSettings, db
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -31,6 +37,19 @@ def index():
     running = Project.query.filter_by(status="running").count()
     failed = Project.query.filter_by(status="failed").count()
     recent = Project.query.order_by(Project.created_at.desc()).limit(10).all()
+
+    total_cost = db.session.query(func.sum(Project.cost_usd)).scalar() or 0.0
+    total_tokens = db.session.query(func.sum(Project.token_total)).scalar() or 0
+
+    # Per-user cost summary: (user_id, username, cost, tokens, count)
+    user_costs_raw = (
+        db.session.query(User.id, User.username, func.sum(Project.cost_usd), func.sum(Project.token_total), func.count(Project.id))
+        .join(Project, Project.user_id == User.id)
+        .group_by(User.id)
+        .order_by(func.sum(Project.cost_usd).desc())
+        .all()
+    )
+
     return render_template(
         "admin/index.html",
         total_users=total_users,
@@ -39,7 +58,49 @@ def index():
         running=running,
         failed=failed,
         recent=recent,
+        total_cost=total_cost,
+        total_tokens=total_tokens,
+        user_costs=user_costs_raw,
     )
+
+
+@admin_bp.route("/users/<int:user_id>/projects")
+@admin_required
+def user_projects(user_id: int):
+    user = db.session.get(User, user_id)
+    if not user:
+        flash("User not found.", "danger")
+        return redirect(url_for("admin.users"))
+    projects = Project.query.filter_by(user_id=user_id).order_by(Project.created_at.desc()).all()
+    return render_template("admin/user_projects.html", target_user=user, projects=projects)
+
+
+@admin_bp.route("/openrouter-credit")
+@admin_required
+def openrouter_credit():
+    """Fetch OpenRouter account credit/balance and return as JSON."""
+    api_key = None
+    gs = GlobalSettings.query.filter_by(key="api_key").first()
+    if gs and gs.value:
+        api_key = gs.value
+    if not api_key:
+        api_key = os.getenv("OPENAI_API_KEY", "")
+
+    if not api_key:
+        return jsonify({"error": "No API key configured"}), 400
+
+    try:
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/auth/key",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+        return jsonify(data)
+    except urllib.error.HTTPError as e:
+        return jsonify({"error": f"HTTP {e.code}: {e.reason}"}), e.code
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 @admin_bp.route("/users")
@@ -128,11 +189,13 @@ def edit_user(user_id: int):
             raw_loops = request.form.get("max_repair_loops", "").strip()
             raw_calls = request.form.get("max_model_calls", "").strip()
             raw_tokens = request.form.get("max_output_tokens", "").strip()
+            raw_weight = request.form.get("slide_weight", "0.6").strip()
             s.max_repair_loops = int(raw_loops) if raw_loops else None
             s.max_model_calls = int(raw_calls) if raw_calls else None
             s.max_output_tokens = int(raw_tokens) if raw_tokens else None
+            s.slide_weight = max(0.0, min(1.0, float(raw_weight))) if raw_weight else 0.6
         except ValueError:
-            flash("Limits must be integers.", "danger")
+            flash("Limits must be integers; slide weight must be 0–1.", "danger")
             return redirect(url_for("admin.edit_user", user_id=user_id))
 
         db.session.commit()
@@ -157,6 +220,40 @@ def delete_user(user_id: int):
     db.session.commit()
     flash(f'User "{user.username}" deleted.', "success")
     return redirect(url_for("admin.users"))
+
+
+@admin_bp.route("/pricing", methods=["GET", "POST"])
+@admin_required
+def pricing():
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "delete":
+            pid = request.form.get("id")
+            row = db.session.get(ModelPricing, int(pid))
+            if row:
+                db.session.delete(row)
+                db.session.commit()
+                flash(f'Pricing for "{row.model_name}" deleted.', "success")
+        elif action in ("add", "edit"):
+            model_name = request.form.get("model_name", "").strip()
+            try:
+                inp = float(request.form.get("input_per_1m", "0"))
+                out = float(request.form.get("output_per_1m", "0"))
+            except ValueError:
+                flash("Prices must be numbers.", "danger")
+                return redirect(url_for("admin.pricing"))
+            row = ModelPricing.query.filter_by(model_name=model_name).first()
+            if row:
+                row.input_per_1m = inp
+                row.output_per_1m = out
+            else:
+                db.session.add(ModelPricing(model_name=model_name, input_per_1m=inp, output_per_1m=out))
+            db.session.commit()
+            flash(f'Pricing for "{model_name}" saved.', "success")
+        return redirect(url_for("admin.pricing"))
+
+    prices = ModelPricing.query.order_by(ModelPricing.model_name).all()
+    return render_template("admin/pricing.html", prices=prices)
 
 
 @admin_bp.route("/settings", methods=["GET", "POST"])

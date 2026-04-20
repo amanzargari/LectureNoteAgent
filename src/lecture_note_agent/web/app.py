@@ -6,7 +6,7 @@ from pathlib import Path
 from flask import Flask
 from flask_login import LoginManager
 
-from .database import GlobalSettings, User, UserSettings, db
+from .database import DEFAULT_MODEL_PRICES, GlobalSettings, ModelPricing, User, UserSettings, db
 
 _ADMIN_USERNAME = "admin"
 _ADMIN_PASSWORD = "Admin@LectureAI2024"
@@ -47,7 +47,9 @@ def create_app(data_dir: str | None = None) -> Flask:
 
     with app.app_context():
         db.create_all()
+        _migrate_db()
         _seed_admin_and_globals()
+        _seed_model_pricing()
 
     return app
 
@@ -79,6 +81,64 @@ def _seed_admin_and_globals() -> None:
             db.session.add(GlobalSettings(key=key, value=value or ""))
 
         db.session.commit()
+
+
+def _migrate_db() -> None:
+    """Idempotent migration: add any missing columns to existing tables."""
+    conn = db.engine.raw_connection()
+    cur = conn.cursor()
+
+    def _has_col(table: str, col: str) -> bool:
+        cur.execute(f"PRAGMA table_info({table})")
+        return any(row[1] == col for row in cur.fetchall())
+
+    # ALL columns ever added to projects (safe to run on any schema version)
+    project_cols = [
+        ("progress_stage",        "VARCHAR(64)"),
+        ("progress_pct",          "FLOAT DEFAULT 0.0"),
+        ("error_message",         "TEXT"),
+        ("notes_markdown",        "TEXT"),
+        ("checklist_markdown",    "TEXT"),
+        ("audit_json",            "TEXT"),
+        ("docx_path",             "VARCHAR(512)"),
+        ("pdf_path",              "VARCHAR(512)"),
+        ("token_prompt",          "INTEGER DEFAULT 0"),
+        ("token_completion",      "INTEGER DEFAULT 0"),
+        ("token_total",           "INTEGER DEFAULT 0"),
+        ("model_calls",           "INTEGER DEFAULT 0"),
+        ("elapsed_seconds",       "FLOAT"),
+        ("slides_object_key",     "VARCHAR(512)"),
+        ("transcript_object_key", "VARCHAR(512)"),
+        ("docx_object_key",       "VARCHAR(512)"),
+        ("pdf_object_key",        "VARCHAR(512)"),
+        ("cost_usd",              "FLOAT DEFAULT 0.0"),
+        ("model_usage_json",      "TEXT"),
+    ]
+    for col, typedef in project_cols:
+        if not _has_col("projects", col):
+            cur.execute(f"ALTER TABLE projects ADD COLUMN {col} {typedef}")
+
+    # user_settings columns
+    user_settings_cols = [
+        ("model_image_selection",          "VARCHAR(128)"),
+        ("fast_mode",                      "BOOLEAN DEFAULT 0"),
+        ("enable_image_selection_refine",  "BOOLEAN DEFAULT 1"),
+        ("ocr_mode",                       "VARCHAR(16) DEFAULT 'auto'"),
+        ("slide_weight",                   "FLOAT DEFAULT 0.6"),
+    ]
+    for col, typedef in user_settings_cols:
+        if not _has_col("user_settings", col):
+            cur.execute(f"ALTER TABLE user_settings ADD COLUMN {col} {typedef}")
+
+    conn.commit()
+    conn.close()
+
+
+def _seed_model_pricing() -> None:
+    for model_name, (inp, out) in DEFAULT_MODEL_PRICES.items():
+        if not ModelPricing.query.filter_by(model_name=model_name).first():
+            db.session.add(ModelPricing(model_name=model_name, input_per_1m=inp, output_per_1m=out))
+    db.session.commit()
 
 
 def run() -> None:

@@ -49,6 +49,11 @@
       </a>
     </li>
     <li class="nav-item">
+      <a href="{{ url_for('admin.pricing') }}" class="nav-link {% if request.endpoint == 'admin.pricing' %}active{% endif %}">
+        <i class="fa-solid fa-dollar-sign"></i><span>Model Pricing</span>
+      </a>
+    </li>
+    <li class="nav-item">
       <a href="{{ url_for('admin.global_settings') }}" class="nav-link {% if request.endpoint == 'admin.global_settings' %}active{% endif %}">
         <i class="fa-solid fa-gear"></i><span>Global Settings</span>
       </a>

@@ -3,37 +3,81 @@
 {% block page_title %}Admin Overview{% endblock %}
 
 {% block content %}
+<!-- Stats row -->
 <div class="row g-3 mb-4">
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-2">
     <div class="stat-card">
       <div class="stat-value text-primary">{{ total_users }}</div>
       <div class="stat-label"><i class="fa-solid fa-users me-1"></i>Total Users</div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-2">
     <div class="stat-card">
       <div class="stat-value">{{ total_projects }}</div>
       <div class="stat-label"><i class="fa-solid fa-file-lines me-1"></i>Total Projects</div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-2">
     <div class="stat-card">
       <div class="stat-value text-success">{{ completed }}</div>
       <div class="stat-label"><i class="fa-solid fa-check me-1"></i>Completed</div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-2">
     <div class="stat-card">
       <div class="stat-value text-danger">{{ failed }}</div>
       <div class="stat-label"><i class="fa-solid fa-xmark me-1"></i>Failed</div>
     </div>
   </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="stat-value text-success">${{ '%.4f'|format(total_cost) }}</div>
+      <div class="stat-label"><i class="fa-solid fa-dollar-sign me-1"></i>Total Cost</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card" id="creditCard">
+      <div class="stat-value text-info" id="creditValue">…</div>
+      <div class="stat-label"><i class="fa-solid fa-wallet me-1"></i>OR Credit</div>
+    </div>
+  </div>
 </div>
 
+<!-- Per-user cost breakdown -->
+{% if user_costs %}
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="fa-solid fa-users me-2"></i>Cost by User</span>
+    <a href="{{ url_for('admin.users') }}" class="btn btn-sm btn-outline-primary">Manage Users</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead><tr><th>User</th><th>Projects</th><th>Total Tokens</th><th>Est. Cost</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for uid, username, cost, tokens, count in user_costs %}
+        <tr>
+          <td>{{ username }}</td>
+          <td class="text-muted">{{ count }}</td>
+          <td class="text-muted small">{{ '{:,}'.format(tokens or 0) }}</td>
+          <td class="text-success">${{ '%.4f'|format(cost or 0) }}</td>
+          <td>
+            <a href="{{ url_for('admin.user_projects', user_id=uid) }}" class="btn btn-sm btn-outline-secondary">
+              <i class="fa-solid fa-folder-open"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Recent projects -->
 <div class="card">
   <div class="card-header d-flex justify-content-between align-items-center">
     <span><i class="fa-solid fa-clock-rotate-left me-2"></i>Recent Projects</span>
-    <a href="{{ url_for('admin.users') }}" class="btn btn-sm btn-outline-primary">Manage Users</a>
+    <a href="{{ url_for('admin.pricing') }}" class="btn btn-sm btn-outline-warning">Model Pricing</a>
   </div>
   {% if recent %}
   <div class="table-responsive">
@@ -45,6 +89,7 @@
           <th>Status</th>
           <th>Created</th>
           <th>Tokens</th>
+          <th>Cost</th>
         </tr>
       </thead>
       <tbody>
@@ -59,6 +104,7 @@
           <td><span class="badge status-badge status-{{ p.status }}">{{ p.status }}</span></td>
           <td class="text-muted small">{{ p.created_at.strftime('%b %d %H:%M') }}</td>
           <td class="text-muted small">{{ '{:,}'.format(p.token_total or 0) }}</td>
+          <td class="text-success small">{% if p.cost_usd %}${{ '%.4f'|format(p.cost_usd) }}{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -68,4 +114,24 @@
   <div class="card-body text-muted text-center py-4">No projects yet.</div>
   {% endif %}
 </div>
+
+{% block scripts %}
+<script>
+// Fetch OpenRouter credit balance
+fetch("{{ url_for('admin.openrouter_credit') }}")
+  .then(r => r.json())
+  .then(data => {
+    const el = document.getElementById('creditValue');
+    if (data.data && data.data.limit_remaining !== undefined) {
+      el.textContent = '$' + parseFloat(data.data.limit_remaining).toFixed(4);
+    } else if (data.error) {
+      el.textContent = 'N/A';
+      el.title = data.error;
+    } else {
+      el.textContent = 'N/A';
+    }
+  })
+  .catch(() => { document.getElementById('creditValue').textContent = 'N/A'; });
+</script>
+{% endblock %}
 {% endblock %}
